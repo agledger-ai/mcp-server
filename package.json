@@ -9,10 +9,18 @@
     "url": "https://github.com/agledger-ai/mcp-server"
   },
   "homepage": "https://agledger.ai",
-  "keywords": ["agledger", "mcp", "model-context-protocol", "ai-agents", "accountability", "audit"],
+  "keywords": [
+    "agledger",
+    "mcp",
+    "model-context-protocol",
+    "ai-agents",
+    "accountability",
+    "audit"
+  ],
   "publishConfig": {
     "access": "public"
   },
+  "files": ["dist", "LICENSE", "README.md"],
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -38,5 +46,9 @@
   },
   "engines": {
     "node": ">=22.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.17",
+    "typescript": "^5.9.3"
   }
 }
