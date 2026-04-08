@@ -1,0 +1,42 @@
+{
+  "name": "@agledger/mcp-server",
+  "version": "1.2.0",
+  "description": "AGLedger™ MCP Server — Agent-facing AGLedger API tools via MCP protocol",
+  "license": "SEE LICENSE IN LICENSE",
+  "author": "AGLedger LLC",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/agledger-ai/mcp-server"
+  },
+  "homepage": "https://agledger.ai",
+  "keywords": ["agledger", "mcp", "model-context-protocol", "ai-agents", "accountability", "audit"],
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "agledger-mcp": "./dist/index.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@agledger/sdk": "^0.3.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.3.6"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}
