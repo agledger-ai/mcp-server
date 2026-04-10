@@ -40,7 +40,7 @@ Usage: agledger-mcp --api-key <key> [--api-url <url>] [--profile <profile>]
 
 Options:
   --api-key, -k     AGLedger API key (required)
-  --api-url, -u     AGLedger API base URL (default: https://api.agledger.ai)
+  --api-url, -u     AGLedger API base URL (default: https://agledger.example.com)
   --profile, -p     Tool profile: "full", "a2a", "openclaw", "schema-dev", "admin", or "audit"
   --help, -h        Show this help message
 

@@ -4,7 +4,7 @@ PROPRIETARY SOFTWARE LICENSE
 
 This software and associated documentation files (the "Software") are the
 proprietary property of AGLedger LLC. The Software is provided for use
-exclusively with the AGLedger API (https://api.agledger.ai).
+exclusively with a self-hosted AGLedger API instance.
 
 Permission is hereby granted to use the Software solely for the purpose of
 integrating with AGLedger services via the AGLedger API, subject to the

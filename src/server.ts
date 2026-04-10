@@ -60,7 +60,7 @@ export class AgledgerMcpServer {
 
     this.client = new AgledgerClient({
       apiKey: options.apiKey,
-      baseUrl: options.apiUrl ?? 'https://api.agledger.ai',
+      baseUrl: options.apiUrl ?? 'https://agledger.example.com',
     });
 
     this.registerTools();

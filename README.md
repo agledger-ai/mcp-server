@@ -54,7 +54,7 @@ The `--profile` flag is required. Each profile exposes a curated set of tools op
 | Flag | Env Var | Description |
 |------|---------|-------------|
 | `--api-key` | `AGLEDGER_API_KEY` | AGLedger API key (required) |
-| `--api-url` | `AGLEDGER_API_URL` | API base URL (default: `https://api.agledger.ai`) |
+| `--api-url` | `AGLEDGER_API_URL` | API base URL (default: `https://agledger.example.com`) |
 | `--profile` | `AGLEDGER_PROFILE` | Tool profile (required) |
 | `--enterprise-id` | `AGLEDGER_ENTERPRISE_ID` | Enterprise ID for admin/enterprise tools |
 
