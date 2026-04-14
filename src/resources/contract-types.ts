@@ -1,5 +1,3 @@
-/** AGLedger™ — MCP Resources for contract type schemas. Patent Pending. Copyright 2026 AGLedger LLC. All rights reserved. */
-
 import { ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { AgledgerClient } from '@agledger/sdk';
@@ -24,7 +22,6 @@ const CONTRACT_TYPES: { type: ContractType; description: string }[] = [
 const VALID_TYPES = new Set(CONTRACT_TYPES.map((ct) => ct.type));
 
 export function registerContractTypeResources(mcp: McpServer, client: AgledgerClient): void {
-  // --- schema://contract-types — Lists all 13 contract types ---
   mcp.registerResource(
     'contract-types',
     'schema://contract-types',
@@ -45,7 +42,6 @@ export function registerContractTypeResources(mcp: McpServer, client: AgledgerCl
     },
   );
 
-  // --- schema://contract-types/{type} — Individual contract type schema ---
   const template = new ResourceTemplate(
     'schema://contract-types/{type}',
     {

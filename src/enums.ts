@@ -1,5 +1,3 @@
-/** AGLedger™ — Shared Zod enum schemas for MCP tool definitions. Patent Pending. Copyright 2026 AGLedger LLC. All rights reserved. */
-
 import { z } from 'zod';
 
 export const ContractTypeEnum = z.enum([
@@ -36,7 +34,8 @@ export const DisputeStatusEnum = z.enum([
   'OPENED', 'TIER_1_REVIEW', 'EVIDENCE_WINDOW', 'TIER_2_REVIEW',
   'ESCALATED', 'TIER_3_ARBITRATION', 'RESOLVED', 'WITHDRAWN',
 ]).describe('Dispute lifecycle status');
-export const ReceiptStatusEnum = z.enum(['SUBMITTED', 'ACCEPTED', 'REJECTED', 'INVALID']).describe('Receipt lifecycle status');
+export const StructuralValidationEnum = z.enum(['ACCEPTED', 'INVALID']).describe('Receipt structural validation result');
+export const VerificationOutcomeEnum = z.enum(['PASS', 'FAIL', 'REVIEW_REQUIRED']).describe('Verification outcome (system verdict)');
 
 export const NextStepSchema = z.object({
   action: z.string().describe('What to do next'),

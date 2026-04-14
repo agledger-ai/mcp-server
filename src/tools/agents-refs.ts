@@ -1,40 +1,10 @@
-/** AGLedger™ — Agents & References MCP tools. Patent Pending. Copyright 2026 AGLedger LLC. All rights reserved. */
-
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { AgledgerClient } from '@agledger/sdk';
-import { apiErrorResult } from '../errors.js';
+import { apiErrorResult, toStructuredContent } from '../errors.js';
 import { toolMeta } from '../tool-scopes.js';
 
-const AgentProfileOutputSchema = z.object({
-  agentId: z.string().describe('Unique agent identifier'),
-  agentClass: z.string().optional().describe('Agent classification (e.g. "data-processor", "orchestrator")'),
-  ownerRef: z.string().optional().describe('Owner or team reference'),
-  orgUnit: z.string().optional().describe('Organizational unit'),
-  description: z.string().optional().describe('Human-readable agent description'),
-}).describe('Agent profile');
-
-const ReferenceSchema = z.object({
-  system: z.string().describe('External system name (e.g. "jira", "salesforce", "github")'),
-  refType: z.string().describe('Reference type within the system (e.g. "ticket", "case", "issue")'),
-  refId: z.string().describe('Identifier in the external system'),
-  metadata: z.record(z.string(), z.unknown()).optional().describe('Additional metadata about the reference'),
-}).describe('External reference linking an AGLedger entity to an external system');
-
-const ReferencesOutputSchema = z.object({
-  references: z.array(ReferenceSchema).describe('List of external references'),
-}).describe('External references for an entity');
-
-const LookupOutputSchema = z.object({
-  entityType: z.string().optional().describe('Type of entity found (e.g. "agent", "mandate")'),
-  entityId: z.string().optional().describe('AGLedger ID of the matched entity'),
-  system: z.string().describe('External system name'),
-  refType: z.string().describe('Reference type'),
-  refId: z.string().describe('External reference ID'),
-}).describe('Reverse lookup result mapping an external reference to an AGLedger entity');
-
 export function registerAgentsRefsTools(mcp: McpServer, client: AgledgerClient): void {
-  // --- get_agent ---
   mcp.registerTool(
     'get_agent',
     {
@@ -45,7 +15,6 @@ export function registerAgentsRefsTools(mcp: McpServer, client: AgledgerClient):
       inputSchema: {
         agentId: z.string().describe('Agent ID to retrieve'),
       },
-      outputSchema: AgentProfileOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -57,17 +26,13 @@ export function registerAgentsRefsTools(mcp: McpServer, client: AgledgerClient):
     async (args) => {
       try {
         const result = await client.agents.get(args.agentId);
-        return {
-          content: [{ type: 'text', text: `Agent ${result.id}: class=${result.agentClass ?? 'unset'}, owner=${result.ownerRef ?? 'unset'}.` }],
-          structuredContent: result as unknown as Record<string, unknown>,
-        };
+        return { content: [], structuredContent: toStructuredContent(result) };
       } catch (err) {
         return apiErrorResult(err);
       }
     },
   );
 
-  // --- update_agent ---
   mcp.registerTool(
     'update_agent',
     {
@@ -83,7 +48,6 @@ export function registerAgentsRefsTools(mcp: McpServer, client: AgledgerClient):
         orgUnit: z.string().optional().describe('Organizational unit'),
         description: z.string().optional().describe('Human-readable agent description'),
       },
-      outputSchema: AgentProfileOutputSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
@@ -100,17 +64,13 @@ export function registerAgentsRefsTools(mcp: McpServer, client: AgledgerClient):
           orgUnit: args.orgUnit,
           description: args.description,
         });
-        return {
-          content: [{ type: 'text', text: `Agent ${result.id} updated.` }],
-          structuredContent: result as unknown as Record<string, unknown>,
-        };
+        return { content: [], structuredContent: toStructuredContent(result) };
       } catch (err) {
         return apiErrorResult(err);
       }
     },
   );
 
-  // --- add_agent_references ---
   mcp.registerTool(
     'add_agent_references',
     {
@@ -128,7 +88,6 @@ export function registerAgentsRefsTools(mcp: McpServer, client: AgledgerClient):
           metadata: z.record(z.string(), z.unknown()).optional().describe('Additional metadata about the reference'),
         })).describe('References to add'),
       },
-      outputSchema: ReferencesOutputSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
@@ -140,17 +99,13 @@ export function registerAgentsRefsTools(mcp: McpServer, client: AgledgerClient):
     async (args) => {
       try {
         const result = await client.agents.addReferences(args.agentId, args.references);
-        return {
-          content: [{ type: 'text', text: `Added ${args.references.length} reference(s) to agent ${args.agentId}.` }],
-          structuredContent: result as unknown as Record<string, unknown>,
-        };
+        return { content: [], structuredContent: toStructuredContent(result) };
       } catch (err) {
         return apiErrorResult(err);
       }
     },
   );
 
-  // --- get_agent_references ---
   mcp.registerTool(
     'get_agent_references',
     {
@@ -161,7 +116,6 @@ export function registerAgentsRefsTools(mcp: McpServer, client: AgledgerClient):
       inputSchema: {
         agentId: z.string().describe('Agent ID to get references for'),
       },
-      outputSchema: ReferencesOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -173,18 +127,14 @@ export function registerAgentsRefsTools(mcp: McpServer, client: AgledgerClient):
     async (args) => {
       try {
         const result = await client.agents.getReferences(args.agentId);
-        const refs = Array.isArray(result) ? result : (result as Record<string, unknown>).references ?? [];
-        return {
-          content: [{ type: 'text', text: `Agent ${args.agentId} has ${(refs as unknown[]).length} reference(s).` }],
-          structuredContent: (Array.isArray(result) ? { references: result } : result) as unknown as Record<string, unknown>,
-        };
+        const structured = Array.isArray(result) ? { references: result } : result;
+        return { content: [], structuredContent: toStructuredContent(structured) };
       } catch (err) {
         return apiErrorResult(err);
       }
     },
   );
 
-  // --- lookup_reference ---
   mcp.registerTool(
     'lookup_reference',
     {
@@ -198,7 +148,6 @@ export function registerAgentsRefsTools(mcp: McpServer, client: AgledgerClient):
         refType: z.string().describe('Reference type within the system (e.g. "ticket", "case", "issue")'),
         refId: z.string().describe('Identifier in the external system'),
       },
-      outputSchema: LookupOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -210,17 +159,13 @@ export function registerAgentsRefsTools(mcp: McpServer, client: AgledgerClient):
     async (args) => {
       try {
         const result = await client.references.lookup(args);
-        return {
-          content: [{ type: 'text', text: `Found ${(result as unknown as Record<string, unknown>).entityType ?? 'entity'} ${(result as unknown as Record<string, unknown>).entityId ?? 'unknown'} for ${args.system}/${args.refType}/${args.refId}.` }],
-          structuredContent: result as unknown as Record<string, unknown>,
-        };
+        return { content: [], structuredContent: toStructuredContent(result) };
       } catch (err) {
         return apiErrorResult(err);
       }
     },
   );
 
-  // --- add_mandate_references ---
   mcp.registerTool(
     'add_mandate_references',
     {
@@ -238,7 +183,6 @@ export function registerAgentsRefsTools(mcp: McpServer, client: AgledgerClient):
           metadata: z.record(z.string(), z.unknown()).optional().describe('Additional metadata about the reference'),
         })).describe('References to add'),
       },
-      outputSchema: ReferencesOutputSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
@@ -250,17 +194,13 @@ export function registerAgentsRefsTools(mcp: McpServer, client: AgledgerClient):
     async (args) => {
       try {
         const result = await client.references.addMandateReferences(args.mandateId, args.references);
-        return {
-          content: [{ type: 'text', text: `Added ${args.references.length} reference(s) to mandate ${args.mandateId}.` }],
-          structuredContent: result as unknown as Record<string, unknown>,
-        };
+        return { content: [], structuredContent: toStructuredContent(result) };
       } catch (err) {
         return apiErrorResult(err);
       }
     },
   );
 
-  // --- get_mandate_references ---
   mcp.registerTool(
     'get_mandate_references',
     {
@@ -271,7 +211,6 @@ export function registerAgentsRefsTools(mcp: McpServer, client: AgledgerClient):
       inputSchema: {
         mandateId: z.string().describe('Mandate ID to get references for'),
       },
-      outputSchema: ReferencesOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -283,11 +222,8 @@ export function registerAgentsRefsTools(mcp: McpServer, client: AgledgerClient):
     async (args) => {
       try {
         const result = await client.references.getMandateReferences(args.mandateId);
-        const refs = Array.isArray(result) ? result : (result as Record<string, unknown>).references ?? [];
-        return {
-          content: [{ type: 'text', text: `Mandate ${args.mandateId} has ${(refs as unknown[]).length} reference(s).` }],
-          structuredContent: (Array.isArray(result) ? { references: result } : result) as unknown as Record<string, unknown>,
-        };
+        const structured = Array.isArray(result) ? { references: result } : result;
+        return { content: [], structuredContent: toStructuredContent(structured) };
       } catch (err) {
         return apiErrorResult(err);
       }

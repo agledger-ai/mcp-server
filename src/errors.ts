@@ -1,7 +1,14 @@
-/** AGLedger™ — Shared MCP error handling utilities. Patent Pending. Copyright 2026 AGLedger LLC. All rights reserved. */
-
 import { AgledgerApiError, PermissionError } from '@agledger/sdk';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+
+/**
+ * Convert a typed SDK response to structuredContent.
+ * JSON round-trip strips class instances, functions, and non-serializable values,
+ * producing a clean Record<string, unknown>.
+ */
+export function toStructuredContent<T>(value: T): Record<string, unknown> {
+  return JSON.parse(JSON.stringify(value)) as Record<string, unknown>;
+}
 
 export function errorResult(message: string, details?: Record<string, unknown>): CallToolResult {
   let text = `Error: ${message}`;

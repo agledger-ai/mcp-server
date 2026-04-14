@@ -1,22 +1,9 @@
 /**
- * AGLedger™ — Tool-level scope annotations (SEP-1880 early adoption).
- * Patent Pending. Copyright 2026 AGLedger LLC. All rights reserved.
- *
- * Maps each MCP tool to the API scopes it requires. Exposed via `_meta.requiredScopes`
- * on each tool definition so MCP clients can pre-filter tools the session can't use.
- *
- * Uses `_meta` (MCP spec vendor metadata) with the `requiredScopes` key.
- * When SEP-1880 is accepted, migrate to the standard annotation key.
- *
- * @see https://github.com/modelcontextprotocol/modelcontextprotocol/issues/1880
- */
-
-/**
  * Required scopes for each tool, keyed by tool name.
  * Read scopes grant access; write scopes imply read.
  */
 export const TOOL_SCOPES: Record<string, string[]> = {
-  // --- Mandates (enterprise) ---
+  // Mandates
   create_mandate: ['mandates:write'],
   get_mandate: ['mandates:read'],
   search_mandates: ['mandates:read'],
@@ -32,7 +19,7 @@ export const TOOL_SCOPES: Record<string, string[]> = {
   get_delegation_chain: ['mandates:read'],
   report_outcome: ['mandates:write'],
 
-  // --- Mandates (agent) ---
+  // Mandates (agent)
   propose_mandate: ['mandates:write'],
   propose_agent_mandate: ['mandates:write'],
   accept_proposal: ['mandates:write'],
@@ -42,30 +29,30 @@ export const TOOL_SCOPES: Record<string, string[]> = {
   list_my_proposals: ['mandates:read'],
   list_principal_mandates: ['mandates:read'],
 
-  // --- A2A ---
+  // A2A
   accept_mandate: ['mandates:write'],
+  reject_mandate: ['mandates:write'],
+  accept_counter_proposal: ['mandates:write'],
   my_mandates: ['mandates:read'],
 
-  // --- Receipts ---
+  // Receipts
   submit_receipt: ['receipts:write'],
   get_receipt: ['receipts:read'],
   list_receipts: ['receipts:read'],
-  validate_receipt_schema: ['receipts:read', 'schemas:read'],
-
-  // --- Verification ---
+  // Verification
   verify_mandate: ['mandates:write'],
   get_verification_status: ['mandates:read'],
 
-  // --- Disputes ---
+  // Disputes
   create_dispute: ['disputes:manage'],
   get_dispute: ['disputes:read'],
   escalate_dispute: ['disputes:manage'],
   submit_dispute_evidence: ['disputes:manage'],
 
-  // --- Events / Audit ---
+  // Events / Audit
   get_audit_trail: ['audit:read'],
 
-  // --- Schemas ---
+  // Schemas
   list_contract_schemas: ['schemas:read'],
   get_contract_schema: ['schemas:read'],
   get_schema_rules: ['schemas:read'],
@@ -81,9 +68,9 @@ export const TOOL_SCOPES: Record<string, string[]> = {
   delete_schema: ['schemas:write'],
   export_schema: ['schemas:read'],
   import_schema: ['schemas:write'],
-  validate_receipt_against_schema: ['schemas:read'],
+  validate_receipt_schema: ['schemas:read'],
 
-  // --- Enterprise management ---
+  // Enterprise management
   approve_enterprise_agent: ['agents:manage'],
   revoke_enterprise_agent: ['agents:manage'],
   list_enterprise_agents: ['agents:read'],
@@ -91,7 +78,7 @@ export const TOOL_SCOPES: Record<string, string[]> = {
   create_agent: ['admin:trust'],
   set_enterprise_config: ['admin:trust'],
 
-  // --- Agents & References ---
+  // Agents & References
   get_agent: ['agents:read'],
   update_agent: ['agents:manage'],
   add_agent_references: ['agents:manage'],
@@ -100,30 +87,33 @@ export const TOOL_SCOPES: Record<string, string[]> = {
   add_mandate_references: ['mandates:write'],
   get_mandate_references: ['mandates:read'],
 
-  // --- Capabilities ---
+  // Capabilities
   get_agent_capabilities: ['agents:read'],
   declare_capabilities: ['agents:manage'],
 
-  // --- Reputation ---
+  // Reputation
   get_agent_reputation: ['reputation:read'],
   get_reputation_by_type: ['reputation:read'],
   get_agent_history: ['reputation:read'],
   check_reputation: ['reputation:read'],
 
-  // --- Dashboard ---
+  // Dashboard
   get_dashboard_summary: ['dashboard:read'],
   get_dashboard_metrics: ['dashboard:read'],
   get_dashboard_alerts: ['dashboard:read'],
 
-  // --- Compliance ---
+  // Compliance
   create_compliance_record: ['compliance:write'],
   list_compliance_records: ['compliance:read'],
   get_eu_ai_act_report: ['compliance:read'],
 
-  // --- Health ---
+  // Health
   check_api_health: [],
 
-  // --- Federation Gateway ---
+  // Verification Keys (public, no auth required)
+  list_verification_keys: [],
+
+  // Federation Gateway
   federation_register: [],
   federation_heartbeat: [],
   federation_register_agent: [],
@@ -145,7 +135,7 @@ export const TOOL_SCOPES: Record<string, string[]> = {
   federation_broadcast_revocations: [],
   federation_sync_agent_directory: [],
 
-  // --- Federation Admin ---
+  // Federation Admin
   federation_create_token: ['admin:system'],
   federation_list_gateways: ['admin:system'],
   federation_admin_revoke: ['admin:system'],
@@ -171,7 +161,7 @@ export const TOOL_SCOPES: Record<string, string[]> = {
   federation_reset_reputation: ['admin:system'],
   federation_get_mandate_criteria_status: ['admin:system'],
 
-  // --- OpenClaw ---
+  // OpenClaw
   agledger_notarize: ['mandates:write', 'receipts:write'],
   agledger_receipt: ['receipts:write'],
   agledger_status: ['mandates:read'],

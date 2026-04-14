@@ -1,9 +1,7 @@
-/** AGLedger™ — Compliance MCP tools. Patent Pending. Copyright 2026 AGLedger LLC. All rights reserved. */
-
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { AgledgerClient } from '@agledger/sdk';
-import { apiErrorResult } from '../errors.js';
+import { apiErrorResult, toStructuredContent } from '../errors.js';
 import { toolMeta } from '../tool-scopes.js';
 
 export function registerComplianceTools(mcp: McpServer, client: AgledgerClient): void {
@@ -28,10 +26,7 @@ export function registerComplianceTools(mcp: McpServer, client: AgledgerClient):
           attestation: args.attestation,
           attestedBy: args.attestedBy,
         });
-        return {
-          content: [{ type: 'text', text: `Compliance record created for mandate ${args.mandateId} (type: ${args.recordType}).` }],
-          structuredContent: record as unknown as Record<string, unknown>,
-        };
+        return { content: [], structuredContent: toStructuredContent(record) };
       } catch (err) { return apiErrorResult(err); }
     },
   );
@@ -51,10 +46,7 @@ export function registerComplianceTools(mcp: McpServer, client: AgledgerClient):
     async (args) => {
       try {
         const result = await client.compliance.listRecords(args.mandateId, { limit: args.limit });
-        return {
-          content: [{ type: 'text', text: `Found ${result.data.length} compliance records for mandate ${args.mandateId}.` }],
-          structuredContent: result as unknown as Record<string, unknown>,
-        };
+        return { content: [], structuredContent: toStructuredContent(result) };
       } catch (err) { return apiErrorResult(err); }
     },
   );
@@ -71,10 +63,7 @@ export function registerComplianceTools(mcp: McpServer, client: AgledgerClient):
     async () => {
       try {
         const report = await client.compliance.getEuAiActReport();
-        return {
-          content: [{ type: 'text', text: `EU AI Act report: ${report.summary.highRiskCount} high-risk mandates, ${report.summary.auditedCount} audited.` }],
-          structuredContent: report as unknown as Record<string, unknown>,
-        };
+        return { content: [], structuredContent: toStructuredContent(report) };
       } catch (err) { return apiErrorResult(err); }
     },
   );

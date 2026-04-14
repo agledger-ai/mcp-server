@@ -1,9 +1,7 @@
-/** AGLedger™ — Reputation MCP tools. Patent Pending. Copyright 2026 AGLedger LLC. All rights reserved. */
-
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { AgledgerClient } from '@agledger/sdk';
-import { apiErrorResult } from '../errors.js';
+import { apiErrorResult, toStructuredContent } from '../errors.js';
 import { toolMeta } from '../tool-scopes.js';
 
 export function registerReputationTools(mcp: McpServer, client: AgledgerClient): void {
@@ -21,10 +19,7 @@ export function registerReputationTools(mcp: McpServer, client: AgledgerClient):
     async (args) => {
       try {
         const page = await client.reputation.getAgent(args.agentId);
-        return {
-          content: [{ type: 'text', text: `Agent ${args.agentId}: ${page.data.length} contract type score(s).` }],
-          structuredContent: page as unknown as Record<string, unknown>,
-        };
+        return { content: [], structuredContent: toStructuredContent(page) };
       } catch (err) { return apiErrorResult(err); }
     },
   );
@@ -44,10 +39,7 @@ export function registerReputationTools(mcp: McpServer, client: AgledgerClient):
     async (args) => {
       try {
         const score = await client.reputation.getByContractType(args.agentId, args.contractType);
-        return {
-          content: [{ type: 'text', text: `Agent ${args.agentId} [${args.contractType}]: composite=${score.compositeScore}, reliability=${score.reliabilityScore}, accuracy=${score.accuracyScore}, efficiency=${score.efficiencyScore}.` }],
-          structuredContent: score as unknown as Record<string, unknown>,
-        };
+        return { content: [], structuredContent: toStructuredContent(score) };
       } catch (err) { return apiErrorResult(err); }
     },
   );
@@ -70,10 +62,7 @@ export function registerReputationTools(mcp: McpServer, client: AgledgerClient):
       try {
         const { agentId, ...params } = args;
         const page = await client.reputation.getHistory(agentId, params);
-        return {
-          content: [{ type: 'text', text: `Agent ${agentId}: ${page.data.length} transaction(s).` }],
-          structuredContent: page as unknown as Record<string, unknown>,
-        };
+        return { content: [], structuredContent: toStructuredContent(page) };
       } catch (err) { return apiErrorResult(err); }
     },
   );

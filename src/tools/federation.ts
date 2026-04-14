@@ -1,131 +1,12 @@
-/** AGLedger™ — Federation gateway MCP tools. Patent Pending. Copyright 2026 AGLedger LLC. All rights reserved. */
-
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { AgledgerClient } from '@agledger/sdk';
-import { apiErrorResult } from '../errors.js';
+import { apiErrorResult, toStructuredContent } from '../errors.js';
 import { toolMeta } from '../tool-scopes.js';
 import { FederationSignalEnum, FederationOutcomeEnum, RevocationReasonEnum } from '../enums.js';
 
-const GatewayOutputSchema = z.object({
-  gatewayId: z.string().describe('Federation gateway ID'),
-  organizationId: z.string().describe('Organization ID'),
-  status: z.string().describe('Gateway status'),
-}).passthrough().describe('Federation gateway registration result');
-
-const HeartbeatOutputSchema = z.object({
-  gatewayId: z.string().describe('Federation gateway ID'),
-  token: z.string().optional().describe('Refreshed bearer token'),
-  expiresAt: z.string().optional().describe('ISO 8601 token expiry'),
-}).passthrough().describe('Heartbeat response with refreshed token');
-
-const AgentOutputSchema = z.object({
-  agentId: z.string().describe('Federated agent ID'),
-  gatewayId: z.string().optional().describe('Owning gateway ID'),
-  contractTypes: z.array(z.string()).describe('Supported contract types'),
-  displayName: z.string().optional().describe('Agent display name'),
-}).passthrough().describe('Federated agent registration result');
-
-const AgentListOutputSchema = z.object({
-  agents: z.array(AgentOutputSchema).describe('List of federated agents'),
-  cursor: z.string().optional().describe('Pagination cursor for next page'),
-}).passthrough().describe('Paginated list of federated agents');
-
-const TransitionOutputSchema = z.object({
-  mandateId: z.string().describe('Mandate ID'),
-  state: z.string().describe('New mandate state'),
-  seq: z.number().describe('Sequence number'),
-}).passthrough().describe('State transition result');
-
-const SignalOutputSchema = z.object({
-  mandateId: z.string().describe('Mandate ID'),
-  signal: z.string().describe('Settlement signal'),
-  signalSeq: z.number().describe('Signal sequence number'),
-}).passthrough().describe('Settlement signal relay result');
-
-const KeyRotationOutputSchema = z.object({
-  gatewayId: z.string().describe('Gateway ID'),
-  rotatedAt: z.string().optional().describe('ISO 8601 rotation timestamp'),
-}).passthrough().describe('Key rotation result');
-
-const RevocationOutputSchema = z.object({
-  gatewayId: z.string().describe('Revoked gateway ID'),
-  reason: z.string().describe('Revocation reason'),
-  revokedAt: z.string().optional().describe('ISO 8601 revocation timestamp'),
-}).passthrough().describe('Gateway revocation result');
-
-const CatchUpOutputSchema = z.object({
-  data: z.array(TransitionOutputSchema).describe('Missed audit entries'),
-  nextPosition: z.number().optional().describe('Position for next catch-up call'),
-}).passthrough().describe('Partition recovery result with missed transitions');
-
-const StreamOutputSchema = z.object({
-  events: z.array(z.object({
-    type: z.string().describe('Event type'),
-    timestamp: z.string().describe('ISO 8601 event timestamp'),
-  }).passthrough()).optional().describe('Federation events since the given timestamp'),
-}).passthrough().describe('Federation event stream result');
-
-const SchemaPublishOutputSchema = z.object({
-  contractType: z.string().describe('Contract type identifier'),
-  status: z.string().optional().describe('Publication status (pending, confirmed)'),
-  confirmationToken: z.string().optional().describe('Token required to confirm the publication'),
-}).passthrough().describe('Schema publication initiation result');
-
-const SchemaConfirmOutputSchema = z.object({
-  contractType: z.string().describe('Contract type identifier'),
-  confirmed: z.boolean().optional().describe('Whether the publication was confirmed'),
-}).passthrough().describe('Schema publication confirmation result');
-
-const ContractTypeListOutputSchema = z.object({
-  contractTypes: z.array(z.object({
-    contractType: z.string().describe('Contract type identifier'),
-    version: z.string().optional().describe('Schema version'),
-    status: z.string().optional().describe('Type status'),
-  }).passthrough()).optional().describe('Available contract types'),
-}).passthrough().describe('List of federated contract types');
-
-const ContractTypeOutputSchema = z.object({
-  contractType: z.string().describe('Contract type identifier'),
-  version: z.string().optional().describe('Schema version'),
-  status: z.string().optional().describe('Type status'),
-  schema: z.record(z.string(), z.unknown()).optional().describe('JSON Schema definition'),
-}).passthrough().describe('Contract type details');
-
-const MandateCriteriaOutputSchema = z.object({
-  mandateId: z.string().describe('Federation mandate ID'),
-  contractType: z.string().optional().describe('Contract type identifier'),
-  criteria: z.record(z.string(), z.unknown()).optional().describe('Acceptance criteria'),
-}).passthrough().describe('Cross-boundary mandate criteria');
-
-const MandateCriteriaSubmitOutputSchema = z.object({
-  mandateId: z.string().describe('Federation mandate ID'),
-  status: z.string().optional().describe('Submission status'),
-}).passthrough().describe('Criteria submission result');
-
-const ReputationContributeOutputSchema = z.object({
-  agentId: z.string().describe('Federated agent ID'),
-  recorded: z.boolean().optional().describe('Whether the contribution was recorded'),
-}).passthrough().describe('Reputation contribution result');
-
-const AgentReputationOutputSchema = z.object({
-  agentId: z.string().describe('Federated agent ID'),
-  score: z.number().optional().describe('Aggregate reputation score'),
-  totalMandates: z.number().optional().describe('Total mandates across all gateways'),
-}).passthrough().describe('Federated agent reputation');
-
-const BroadcastRevocationsOutputSchema = z.object({
-  gatewayId: z.string().describe('Revoked gateway ID'),
-  peersNotified: z.number().optional().describe('Number of peer gateways notified'),
-}).passthrough().describe('Revocation broadcast result');
-
-const SyncAgentDirectoryOutputSchema = z.object({
-  synced: z.number().optional().describe('Number of agents synced'),
-}).passthrough().describe('Agent directory sync result');
-
 export function registerFederationTools(mcp: McpServer, client: AgledgerClient): void {
 
-  // --- federation_register ---
   mcp.registerTool(
     'federation_register',
     {
@@ -144,7 +25,6 @@ export function registerFederationTools(mcp: McpServer, client: AgledgerClient):
         displayName: z.string().optional().describe('Human-readable gateway name'),
         capabilities: z.array(z.string()).optional().describe('Gateway capabilities (e.g. contract types supported)'),
       },
-      outputSchema: GatewayOutputSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
@@ -156,17 +36,13 @@ export function registerFederationTools(mcp: McpServer, client: AgledgerClient):
     async (args) => {
       try {
         const result = await client.federation.register(args);
-        return {
-          content: [{ type: 'text', text: `Gateway ${result.gatewayId} registered. Token expires at ${result.bearerTokenExpiresAt}. Use federation_heartbeat to refresh your token before it expires.` }],
-          structuredContent: result as unknown as Record<string, unknown>,
-        };
+        return { content: [], structuredContent: toStructuredContent(result) };
       } catch (err) {
         return apiErrorResult(err);
       }
     },
   );
 
-  // --- federation_heartbeat ---
   mcp.registerTool(
     'federation_heartbeat',
     {
@@ -178,7 +54,6 @@ export function registerFederationTools(mcp: McpServer, client: AgledgerClient):
         mandateCount: z.number().describe('Current number of active mandates'),
         timestamp: z.string().describe('ISO 8601 timestamp of this heartbeat'),
       },
-      outputSchema: HeartbeatOutputSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
@@ -190,17 +65,13 @@ export function registerFederationTools(mcp: McpServer, client: AgledgerClient):
     async (args) => {
       try {
         const result = await client.federation.heartbeat(args);
-        return {
-          content: [{ type: 'text', text: `Heartbeat accepted for gateway ${args.gatewayId}. Token expires at ${result.bearerTokenExpiresAt}. ${result.revocations.length > 0 ? `${result.revocations.length} revocation(s) received.` : ''}` }],
-          structuredContent: result as unknown as Record<string, unknown>,
-        };
+        return { content: [], structuredContent: toStructuredContent(result) };
       } catch (err) {
         return apiErrorResult(err);
       }
     },
   );
 
-  // --- federation_register_agent ---
   mcp.registerTool(
     'federation_register_agent',
     {
@@ -211,7 +82,6 @@ export function registerFederationTools(mcp: McpServer, client: AgledgerClient):
         contractTypes: z.array(z.string()).describe('Contract types this agent supports'),
         displayName: z.string().optional().describe('Human-readable agent name'),
       },
-      outputSchema: AgentOutputSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
@@ -223,17 +93,13 @@ export function registerFederationTools(mcp: McpServer, client: AgledgerClient):
     async (args) => {
       try {
         const result = await client.federation.registerAgent(args);
-        return {
-          content: [{ type: 'text', text: `Agent ${args.agentId} registered: ${result.registered}.` }],
-          structuredContent: result as unknown as Record<string, unknown>,
-        };
+        return { content: [], structuredContent: toStructuredContent(result) };
       } catch (err) {
         return apiErrorResult(err);
       }
     },
   );
 
-  // --- federation_list_agents ---
   mcp.registerTool(
     'federation_list_agents',
     {
@@ -244,7 +110,6 @@ export function registerFederationTools(mcp: McpServer, client: AgledgerClient):
         limit: z.number().optional().describe('Maximum number of agents to return'),
         cursor: z.string().optional().describe('Pagination cursor from previous response'),
       },
-      outputSchema: AgentListOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -256,17 +121,13 @@ export function registerFederationTools(mcp: McpServer, client: AgledgerClient):
     async (args) => {
       try {
         const result = await client.federation.listAgents(args);
-        return {
-          content: [{ type: 'text', text: `Found ${result.data.length} federated agent(s).${result.hasMore ? ' More results available — pass cursor to paginate.' : ''}` }],
-          structuredContent: result as unknown as Record<string, unknown>,
-        };
+        return { content: [], structuredContent: toStructuredContent(result) };
       } catch (err) {
         return apiErrorResult(err);
       }
     },
   );
 
-  // --- federation_submit_transition ---
   mcp.registerTool(
     'federation_submit_transition',
     {
@@ -286,7 +147,6 @@ export function registerFederationTools(mcp: McpServer, client: AgledgerClient):
         signature: z.string().describe('Ed25519 signature over the transition payload'),
         performerGatewayId: z.string().optional().describe('Performer gateway ID (if different from submitter)'),
       },
-      outputSchema: TransitionOutputSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
@@ -298,17 +158,13 @@ export function registerFederationTools(mcp: McpServer, client: AgledgerClient):
     async (args) => {
       try {
         const result = await client.federation.submitStateTransition(args);
-        return {
-          content: [{ type: 'text', text: `Transition accepted. Hub state: ${result.hubState}. Sub-status: ${result.subStatus}. Hub timestamp: ${result.hubTimestamp}.` }],
-          structuredContent: result as unknown as Record<string, unknown>,
-        };
+        return { content: [], structuredContent: toStructuredContent(result) };
       } catch (err) {
         return apiErrorResult(err);
       }
     },
   );
 
-  // --- federation_relay_signal ---
   mcp.registerTool(
     'federation_relay_signal',
     {
@@ -326,7 +182,6 @@ export function registerFederationTools(mcp: McpServer, client: AgledgerClient):
         performerSignature: z.string().describe('Ed25519 signature from the performer gateway'),
         outcome: FederationOutcomeEnum.optional().describe('Verdict outcome if signal is SETTLE'),
       },
-      outputSchema: SignalOutputSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
@@ -338,17 +193,13 @@ export function registerFederationTools(mcp: McpServer, client: AgledgerClient):
     async (args) => {
       try {
         const result = await client.federation.relaySignal(args);
-        return {
-          content: [{ type: 'text', text: `Signal relayed: ${result.relayed}. Target gateway: ${result.targetGatewayId}. Hub timestamp: ${result.hubTimestamp}.` }],
-          structuredContent: result as unknown as Record<string, unknown>,
-        };
+        return { content: [], structuredContent: toStructuredContent(result) };
       } catch (err) {
         return apiErrorResult(err);
       }
     },
   );
 
-  // --- federation_rotate_key ---
   mcp.registerTool(
     'federation_rotate_key',
     {
@@ -363,7 +214,6 @@ export function registerFederationTools(mcp: McpServer, client: AgledgerClient):
         timestamp: z.string().describe('ISO 8601 timestamp of this rotation'),
         nonce: z.string().describe('Unique nonce to prevent replay'),
       },
-      outputSchema: KeyRotationOutputSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: true,
@@ -376,17 +226,13 @@ export function registerFederationTools(mcp: McpServer, client: AgledgerClient):
       try {
         const { gatewayId, ...rotateParams } = args;
         const result = await client.federation.rotateKey(gatewayId, rotateParams);
-        return {
-          content: [{ type: 'text', text: `Keys rotated for gateway ${gatewayId}: ${result.rotated ? 'success' : 'failed'}.` }],
-          structuredContent: result as unknown as Record<string, unknown>,
-        };
+        return { content: [], structuredContent: toStructuredContent(result) };
       } catch (err) {
         return apiErrorResult(err);
       }
     },
   );
 
-  // --- federation_revoke ---
   mcp.registerTool(
     'federation_revoke',
     {
@@ -397,7 +243,6 @@ export function registerFederationTools(mcp: McpServer, client: AgledgerClient):
         revocationSecret: z.string().describe('Revocation secret set during registration'),
         reason: RevocationReasonEnum.describe('Reason for revocation'),
       },
-      outputSchema: RevocationOutputSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: true,
@@ -410,17 +255,13 @@ export function registerFederationTools(mcp: McpServer, client: AgledgerClient):
       try {
         const { gatewayId, ...revokeParams } = args;
         const result = await client.federation.revoke(gatewayId, revokeParams);
-        return {
-          content: [{ type: 'text', text: `Gateway ${gatewayId} revoked: ${result.revoked}. Revoked at: ${result.revokedAt}. This action is permanent.` }],
-          structuredContent: result as unknown as Record<string, unknown>,
-        };
+        return { content: [], structuredContent: toStructuredContent(result) };
       } catch (err) {
         return apiErrorResult(err);
       }
     },
   );
 
-  // --- federation_catch_up ---
   mcp.registerTool(
     'federation_catch_up',
     {
@@ -430,7 +271,6 @@ export function registerFederationTools(mcp: McpServer, client: AgledgerClient):
         sincePosition: z.number().describe('Position to catch up from (exclusive)'),
         limit: z.number().optional().describe('Maximum number of transitions to return'),
       },
-      outputSchema: CatchUpOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -442,17 +282,13 @@ export function registerFederationTools(mcp: McpServer, client: AgledgerClient):
     async (args) => {
       try {
         const result = await client.federation.catchUp(args);
-        return {
-          content: [{ type: 'text', text: `Caught up ${result.data.length} entry(ies) since position ${args.sincePosition}.${result.hasMore ? ' More entries available.' : ' Fully caught up.'}` }],
-          structuredContent: result as unknown as Record<string, unknown>,
-        };
+        return { content: [], structuredContent: toStructuredContent(result) };
       } catch (err) {
         return apiErrorResult(err);
       }
     },
   );
 
-  // --- federation_stream ---
   mcp.registerTool(
     'federation_stream',
     {
@@ -461,7 +297,6 @@ export function registerFederationTools(mcp: McpServer, client: AgledgerClient):
       inputSchema: {
         since: z.string().optional().describe('ISO 8601 timestamp to stream events from (exclusive)'),
       },
-      outputSchema: StreamOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -473,18 +308,13 @@ export function registerFederationTools(mcp: McpServer, client: AgledgerClient):
     async (args) => {
       try {
         const result = await client.federation.stream({ since: args.since });
-        const events = Array.isArray(result['events']) ? result['events'] as unknown[] : [];
-        return {
-          content: [{ type: 'text', text: `Streamed ${events.length} federation event(s).${args.since ? ` Since: ${args.since}.` : ''}` }],
-          structuredContent: result as unknown as Record<string, unknown>,
-        };
+        return { content: [], structuredContent: toStructuredContent(result) };
       } catch (err) {
         return apiErrorResult(err);
       }
     },
   );
 
-  // --- federation_publish_schema ---
   mcp.registerTool(
     'federation_publish_schema',
     {
@@ -495,7 +325,6 @@ export function registerFederationTools(mcp: McpServer, client: AgledgerClient):
         schema: z.record(z.string(), z.unknown()).describe('JSON Schema definition for the contract type'),
         visibility: z.enum(['hub-only', 'full']).optional().describe('Distribution scope: hub-only (hub retains schema) or full (replicated to all gateways)'),
       },
-      outputSchema: SchemaPublishOutputSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
@@ -507,17 +336,13 @@ export function registerFederationTools(mcp: McpServer, client: AgledgerClient):
     async (args) => {
       try {
         const result = await client.federation.publishSchema(args.contractType, { schema: args.schema, visibility: args.visibility });
-        return {
-          content: [{ type: 'text', text: `Schema publication initiated for ${args.contractType}. Status: ${result.status ?? 'pending'}. Use federation_confirm_schema_publish with the confirmation token to finalize.` }],
-          structuredContent: result as unknown as Record<string, unknown>,
-        };
+        return { content: [], structuredContent: toStructuredContent(result) };
       } catch (err) {
         return apiErrorResult(err);
       }
     },
   );
 
-  // --- federation_confirm_schema_publish ---
   mcp.registerTool(
     'federation_confirm_schema_publish',
     {
@@ -527,7 +352,6 @@ export function registerFederationTools(mcp: McpServer, client: AgledgerClient):
         contractType: z.string().describe('Contract type identifier that was published'),
         confirmationToken: z.string().describe('Confirmation token from the publish response'),
       },
-      outputSchema: SchemaConfirmOutputSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
@@ -539,24 +363,19 @@ export function registerFederationTools(mcp: McpServer, client: AgledgerClient):
     async (args) => {
       try {
         const result = await client.federation.confirmSchemaPublish(args.contractType, { confirmationToken: args.confirmationToken });
-        return {
-          content: [{ type: 'text', text: `Schema publication confirmed for ${args.contractType}. The schema is now available to federated gateways.` }],
-          structuredContent: result as unknown as Record<string, unknown>,
-        };
+        return { content: [], structuredContent: toStructuredContent(result) };
       } catch (err) {
         return apiErrorResult(err);
       }
     },
   );
 
-  // --- federation_list_contract_types ---
   mcp.registerTool(
     'federation_list_contract_types',
     {
       title: 'List Federation Contract Types',
       description: 'List contract types available through the federation hub. Use this to discover which contract types are supported across federated gateways before creating cross-boundary mandates.',
       inputSchema: {},
-      outputSchema: ContractTypeListOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -568,17 +387,13 @@ export function registerFederationTools(mcp: McpServer, client: AgledgerClient):
     async () => {
       try {
         const result = await client.federation.listContractTypes();
-        return {
-          content: [{ type: 'text', text: `Found ${result.length} federated contract type(s). Use federation_get_contract_type for details on a specific type.` }],
-          structuredContent: { contractTypes: result } as unknown as Record<string, unknown>,
-        };
+        return { content: [], structuredContent: toStructuredContent({ contractTypes: result }) };
       } catch (err) {
         return apiErrorResult(err);
       }
     },
   );
 
-  // --- federation_get_contract_type ---
   mcp.registerTool(
     'federation_get_contract_type',
     {
@@ -587,7 +402,6 @@ export function registerFederationTools(mcp: McpServer, client: AgledgerClient):
       inputSchema: {
         contractType: z.string().describe('Contract type identifier (e.g. ACH-PROC-v1)'),
       },
-      outputSchema: ContractTypeOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -599,17 +413,13 @@ export function registerFederationTools(mcp: McpServer, client: AgledgerClient):
     async (args) => {
       try {
         const result = await client.federation.getContractType(args.contractType);
-        return {
-          content: [{ type: 'text', text: `Contract type ${args.contractType}: ${result.status ?? 'unknown status'}. Schema version: ${result.version ?? 'n/a'}.` }],
-          structuredContent: result as unknown as Record<string, unknown>,
-        };
+        return { content: [], structuredContent: toStructuredContent(result) };
       } catch (err) {
         return apiErrorResult(err);
       }
     },
   );
 
-  // --- federation_get_mandate_criteria ---
   mcp.registerTool(
     'federation_get_mandate_criteria',
     {
@@ -618,7 +428,6 @@ export function registerFederationTools(mcp: McpServer, client: AgledgerClient):
       inputSchema: {
         mandateId: z.string().describe('Federation mandate ID'),
       },
-      outputSchema: MandateCriteriaOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -630,17 +439,13 @@ export function registerFederationTools(mcp: McpServer, client: AgledgerClient):
     async (args) => {
       try {
         const result = await client.federation.getMandateCriteria(args.mandateId);
-        return {
-          content: [{ type: 'text', text: `Criteria retrieved for mandate ${result.mandateId}. Submitted by: ${result.submittedBy}.` }],
-          structuredContent: result as unknown as Record<string, unknown>,
-        };
+        return { content: [], structuredContent: toStructuredContent(result) };
       } catch (err) {
         return apiErrorResult(err);
       }
     },
   );
 
-  // --- federation_submit_mandate_criteria ---
   mcp.registerTool(
     'federation_submit_mandate_criteria',
     {
@@ -650,7 +455,6 @@ export function registerFederationTools(mcp: McpServer, client: AgledgerClient):
         mandateId: z.string().describe('Federation mandate ID'),
         criteria: z.record(z.string(), z.unknown()).describe('Acceptance criteria matching the contract type schema'),
       },
-      outputSchema: MandateCriteriaSubmitOutputSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
@@ -662,17 +466,13 @@ export function registerFederationTools(mcp: McpServer, client: AgledgerClient):
     async (args) => {
       try {
         const result = await client.federation.submitMandateCriteria(args.mandateId, { criteria: args.criteria });
-        return {
-          content: [{ type: 'text', text: `Criteria submitted for mandate ${result.mandateId}. Submitted by: ${result.submittedBy} at ${result.submittedAt}.` }],
-          structuredContent: result as unknown as Record<string, unknown>,
-        };
+        return { content: [], structuredContent: toStructuredContent(result) };
       } catch (err) {
         return apiErrorResult(err);
       }
     },
   );
 
-  // --- federation_contribute_reputation ---
   mcp.registerTool(
     'federation_contribute_reputation',
     {
@@ -684,7 +484,6 @@ export function registerFederationTools(mcp: McpServer, client: AgledgerClient):
         outcome: z.string().describe('Mandate outcome (e.g. PASS, FAIL)'),
         mandateId: z.string().optional().describe('Associated mandate ID for traceability'),
       },
-      outputSchema: ReputationContributeOutputSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
@@ -696,17 +495,13 @@ export function registerFederationTools(mcp: McpServer, client: AgledgerClient):
     async (args) => {
       try {
         const result = await client.federation.contributeReputation(args);
-        return {
-          content: [{ type: 'text', text: `Reputation contribution recorded for agent ${args.agentId}. Outcome: ${args.outcome}. Contract type: ${args.contractType}.` }],
-          structuredContent: result as unknown as Record<string, unknown>,
-        };
+        return { content: [], structuredContent: toStructuredContent(result) };
       } catch (err) {
         return apiErrorResult(err);
       }
     },
   );
 
-  // --- federation_get_agent_reputation ---
   mcp.registerTool(
     'federation_get_agent_reputation',
     {
@@ -715,7 +510,6 @@ export function registerFederationTools(mcp: McpServer, client: AgledgerClient):
       inputSchema: {
         agentId: z.string().describe('Federated agent ID'),
       },
-      outputSchema: AgentReputationOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -727,17 +521,13 @@ export function registerFederationTools(mcp: McpServer, client: AgledgerClient):
     async (args) => {
       try {
         const result = await client.federation.getAgentReputation(args.agentId);
-        return {
-          content: [{ type: 'text', text: `Reputation for agent ${args.agentId}: score ${result.overallScore}, contributions: ${result.contributions}.` }],
-          structuredContent: result as unknown as Record<string, unknown>,
-        };
+        return { content: [], structuredContent: toStructuredContent(result) };
       } catch (err) {
         return apiErrorResult(err);
       }
     },
   );
 
-  // --- federation_broadcast_revocations ---
   mcp.registerTool(
     'federation_broadcast_revocations',
     {
@@ -748,7 +538,6 @@ export function registerFederationTools(mcp: McpServer, client: AgledgerClient):
         reason: z.string().describe('Reason for revocation'),
         revokedAt: z.string().describe('ISO 8601 timestamp when the revocation occurred'),
       },
-      outputSchema: BroadcastRevocationsOutputSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
@@ -760,17 +549,13 @@ export function registerFederationTools(mcp: McpServer, client: AgledgerClient):
     async (args) => {
       try {
         const result = await client.federation.broadcastRevocations(args);
-        return {
-          content: [{ type: 'text', text: `Revocation broadcast sent for gateway ${args.gatewayId}. Broadcast: ${result.broadcast}.` }],
-          structuredContent: result as unknown as Record<string, unknown>,
-        };
+        return { content: [], structuredContent: toStructuredContent(result) };
       } catch (err) {
         return apiErrorResult(err);
       }
     },
   );
 
-  // --- federation_sync_agent_directory ---
   mcp.registerTool(
     'federation_sync_agent_directory',
     {
@@ -782,7 +567,6 @@ export function registerFederationTools(mcp: McpServer, client: AgledgerClient):
           contractTypes: z.array(z.string()).describe('Contract types this agent supports'),
         })).describe('List of agents to sync'),
       },
-      outputSchema: SyncAgentDirectoryOutputSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
@@ -794,10 +578,7 @@ export function registerFederationTools(mcp: McpServer, client: AgledgerClient):
     async (args) => {
       try {
         const result = await client.federation.syncAgentDirectory(args);
-        return {
-          content: [{ type: 'text', text: `Agent directory synced: ${args.agents.length} agent(s) pushed. Synced: ${result.synced ?? 0}.` }],
-          structuredContent: result as unknown as Record<string, unknown>,
-        };
+        return { content: [], structuredContent: toStructuredContent(result) };
       } catch (err) {
         return apiErrorResult(err);
       }

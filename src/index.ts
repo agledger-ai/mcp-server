@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-/** AGLedger™ — MCP Server CLI entry point. Patent Pending. Copyright 2026 AGLedger LLC. All rights reserved. */
-
 import { parseArgs } from 'node:util';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { AgledgerMcpServer } from './server.js';
@@ -34,23 +32,24 @@ function main(): void {
 
   if (values.help) {
     process.stderr.write(
-      `AGLedger™ MCP Server v1.2.0
+      `AGLedger™ MCP Server v1.4.0
 
 Usage: agledger-mcp --api-key <key> [--api-url <url>] [--profile <profile>]
 
 Options:
   --api-key, -k     AGLedger API key (required)
   --api-url, -u     AGLedger API base URL (default: https://agledger.example.com)
-  --profile, -p     Tool profile: "full", "a2a", "openclaw", "schema-dev", "admin", or "audit"
+  --profile, -p     Tool profile (required, see below)
   --help, -h        Show this help message
 
 Profiles:
-  full              All tools — use only for development/debugging (50 tools)
-  a2a               10 focused tools for agent-to-agent coordination with closure prompting
-  openclaw          5 thin notarization tools for OpenClaw agent-to-agent agreements (<500 token schema)
-  schema-dev        Schema development tools + health check
-  admin             Enterprise agent management, capabilities, reputation, and health (9 tools)
-  audit             Read-only compliance monitoring: events, verification, disputes, reputation, health (8 tools)
+  agent             Standard agent workflow: create mandates, submit receipts, verdicts, verification
+  admin             Enterprise management: mandates, receipts, agents, capabilities, reputation, federation admin
+  audit             Compliance monitoring: mandates, receipts, events, verification, disputes, dashboard
+  schema-dev        Custom contract type authoring with workflow guidance
+  openclaw          Lightweight notarization for agent-to-agent agreements (5 tools)
+  federation        Federation gateway operations + admin
+  full              All tools (development/debugging only)
 
 Environment:
   AGLEDGER_API_KEY     API key (overridden by --api-key)
@@ -68,18 +67,19 @@ Environment:
     process.stderr.write(`Error: --profile or AGLEDGER_PROFILE is required.
 
 Choose a profile to control which tools are available:
-  a2a          10 tools — agent-to-agent coordination with closure prompting
-  admin         9 tools — enterprise agent management and capabilities
-  audit         8 tools — read-only compliance monitoring
-  schema-dev   13 tools — custom contract type authoring
-  openclaw      5 tools — lightweight notarization
-  full         50 tools — all tools (development/debugging only)
+  agent        Standard agent workflow — create mandates, submit receipts, verdicts
+  admin        Enterprise management — mandates, receipts, agents, capabilities, reputation
+  audit        Compliance monitoring — mandates, events, verification, disputes, dashboard
+  schema-dev   Custom contract type authoring
+  openclaw     Lightweight notarization (5 tools)
+  federation   Federation gateway operations + admin
+  full         All tools (development/debugging only)
 
-Example: agledger-mcp --api-key <key> --profile a2a
+Example: agledger-mcp --api-key <key> --profile agent
 `);
     process.exit(1);
   }
-  const profile = profileRaw as 'full' | 'a2a' | 'openclaw' | 'schema-dev' | 'admin' | 'audit';
+  const profile = profileRaw as 'full' | 'agent' | 'openclaw' | 'schema-dev' | 'admin' | 'audit' | 'federation';
   const enterpriseId = values['enterprise-id'] ?? process.env.AGLEDGER_ENTERPRISE_ID;
 
   if (!apiKey) {

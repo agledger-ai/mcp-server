@@ -19,7 +19,7 @@ Add to your MCP client configuration (e.g. `claude_desktop_config.json`):
   "mcpServers": {
     "agledger": {
       "command": "agledger-mcp",
-      "args": ["--profile", "a2a"],
+      "args": ["--profile", "agent"],
       "env": {
         "AGLEDGER_API_KEY": "your-api-key"
       }
@@ -31,7 +31,7 @@ Add to your MCP client configuration (e.g. `claude_desktop_config.json`):
 Or run directly:
 
 ```bash
-agledger-mcp --api-key <key> --profile a2a
+agledger-mcp --api-key <key> --profile agent
 ```
 
 ## Profiles
@@ -40,14 +40,14 @@ The `--profile` flag is required. Each profile exposes a curated set of tools op
 
 | Profile | Tools | Use Case |
 |---------|-------|----------|
-| `a2a` | ~17 | Agent-to-agent coordination: propose, accept, reject, counter-propose mandates |
-| `admin` | ~31 | Enterprise management: agents, capabilities, reputation, federation admin |
-| `audit` | ~24 | Read-only compliance monitoring: events, verification, disputes, dashboard |
+| `agent` | ~21 | Standard agent workflow: create mandates, submit receipts, verdicts, verification |
+| `admin` | ~41 | Enterprise management: mandates, receipts, agents, capabilities, reputation, federation admin |
+| `audit` | ~36 | Compliance monitoring: mandates, receipts, events, verification, disputes, dashboard |
 | `schema-dev` | ~17 | Custom contract type authoring with workflow guidance |
 | `openclaw` | 5 | Lightweight notarization for agent-to-agent agreements |
 | `code` | 2 | Power-user mode: execute SDK code directly via `sdk_execute` |
 | `federation` | ~52 | Federation gateway operations + admin |
-| `full` | ~134 | All tools (development/debugging only) |
+| `full` | ~124 | All tools (development/debugging only) |
 
 ## Configuration
 

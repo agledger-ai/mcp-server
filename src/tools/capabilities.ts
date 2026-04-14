@@ -1,19 +1,11 @@
-/** AGLedger™ — Capability MCP tools (get, declare). Patent Pending. Copyright 2026 AGLedger LLC. All rights reserved. */
-
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { AgledgerClient } from '@agledger/sdk';
-import { apiErrorResult } from '../errors.js';
+import { apiErrorResult, toStructuredContent } from '../errors.js';
 import { toolMeta } from '../tool-scopes.js';
 import { ContractTypeEnum } from '../enums.js';
 
-const CapabilitiesOutputSchema = z.object({
-  agentId: z.string().describe('Agent ID'),
-  capabilities: z.array(ContractTypeEnum).describe('Supported contract types'),
-}).describe('Agent capabilities');
-
 export function registerCapabilityTools(mcp: McpServer, client: AgledgerClient): void {
-  // --- get_agent_capabilities ---
   mcp.registerTool(
     'get_agent_capabilities',
     {
@@ -22,7 +14,6 @@ export function registerCapabilityTools(mcp: McpServer, client: AgledgerClient):
       inputSchema: {
         agentId: z.string().describe('Agent ID to check capabilities for'),
       },
-      outputSchema: CapabilitiesOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -34,17 +25,13 @@ export function registerCapabilityTools(mcp: McpServer, client: AgledgerClient):
     async (args) => {
       try {
         const result = await client.capabilities.get(args.agentId);
-        return {
-          content: [{ type: 'text', text: `Agent ${result.agentId} supports ${result.capabilities.length} contract types.` }],
-          structuredContent: result as unknown as Record<string, unknown>,
-        };
+        return { content: [], structuredContent: toStructuredContent(result) };
       } catch (err) {
         return apiErrorResult(err);
       }
     },
   );
 
-  // --- declare_capabilities ---
   mcp.registerTool(
     'declare_capabilities',
     {
@@ -54,7 +41,6 @@ export function registerCapabilityTools(mcp: McpServer, client: AgledgerClient):
         agentId: z.string().describe('Agent ID to set capabilities for'),
         contractTypes: z.array(ContractTypeEnum).describe('Contract types this agent supports'),
       },
-      outputSchema: CapabilitiesOutputSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
@@ -68,10 +54,7 @@ export function registerCapabilityTools(mcp: McpServer, client: AgledgerClient):
         const result = await client.capabilities.set(args.agentId, {
           contractTypes: args.contractTypes,
         });
-        return {
-          content: [{ type: 'text', text: `Capabilities declared for ${result.agentId}: ${result.capabilities.join(', ')}.` }],
-          structuredContent: result as unknown as Record<string, unknown>,
-        };
+        return { content: [], structuredContent: toStructuredContent(result) };
       } catch (err) {
         return apiErrorResult(err);
       }

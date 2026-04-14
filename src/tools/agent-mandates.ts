@@ -1,42 +1,11 @@
-/** AGLedger™ — Agent-to-agent mandate MCP tools. Patent Pending. Copyright 2026 AGLedger LLC. All rights reserved. */
-
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { AgledgerClient } from '@agledger/sdk';
-import { apiErrorResult } from '../errors.js';
+import { apiErrorResult, toStructuredContent } from '../errors.js';
 import { toolMeta } from '../tool-scopes.js';
-import { ContractTypeEnum, NextStepsField } from '../enums.js';
-
-const MandateOutputSchema = z.object({
-  id: z.string(),
-  enterpriseId: z.string(),
-  agentId: z.string().nullable().optional(),
-  contractType: ContractTypeEnum,
-  contractVersion: z.string(),
-  platform: z.string(),
-  status: z.string(),
-  criteria: z.record(z.string(), z.unknown()),
-  tolerance: z.record(z.string(), z.unknown()).nullable().optional(),
-  deadline: z.string().nullable().optional(),
-  commissionPct: z.number().nullable().optional(),
-  parentMandateId: z.string().nullable().optional(),
-  rootMandateId: z.string().nullable().optional(),
-  chainDepth: z.number().nullable().optional(),
-  version: z.number(),
-  createdAt: z.string(),
-  updatedAt: z.string(),
-  nextSteps: NextStepsField,
-}).passthrough().describe('AGLedger mandate object');
-
-const PageOutputSchema = z.object({
-  data: z.array(MandateOutputSchema),
-  hasMore: z.boolean(),
-  nextCursor: z.string().nullable().optional(),
-  total: z.number().optional(),
-}).describe('Paginated mandate results');
+import { ContractTypeEnum } from '../enums.js';
 
 export function registerAgentMandateTools(mcp: McpServer, client: AgledgerClient): void {
-  // --- propose_agent_mandate ---
   mcp.registerTool(
     'propose_agent_mandate',
     {
@@ -54,7 +23,6 @@ export function registerAgentMandateTools(mcp: McpServer, client: AgledgerClient
         commissionPct: z.number().optional().describe('Commission percentage (0-100)'),
         deadline: z.string().optional().describe('ISO 8601 deadline'),
       },
-      outputSchema: MandateOutputSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
@@ -66,17 +34,13 @@ export function registerAgentMandateTools(mcp: McpServer, client: AgledgerClient
     async (args) => {
       try {
         const mandate = await client.mandates.createAgent(args);
-        return {
-          content: [{ type: 'text', text: `Mandate ${mandate.id} proposed (${mandate.status}).` }],
-          structuredContent: mandate as unknown as Record<string, unknown>,
-        };
+        return { content: [], structuredContent: toStructuredContent(mandate) };
       } catch (err) {
         return apiErrorResult(err);
       }
     },
   );
 
-  // --- accept_proposal ---
   mcp.registerTool(
     'accept_proposal',
     {
@@ -85,7 +49,6 @@ export function registerAgentMandateTools(mcp: McpServer, client: AgledgerClient
       inputSchema: {
         mandateId: z.string().describe('UUID of the proposed mandate'),
       },
-      outputSchema: MandateOutputSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
@@ -97,17 +60,13 @@ export function registerAgentMandateTools(mcp: McpServer, client: AgledgerClient
     async (args) => {
       try {
         const mandate = await client.mandates.accept(args.mandateId);
-        return {
-          content: [{ type: 'text', text: `Mandate ${mandate.id} accepted (${mandate.status}).` }],
-          structuredContent: mandate as unknown as Record<string, unknown>,
-        };
+        return { content: [], structuredContent: toStructuredContent(mandate) };
       } catch (err) {
         return apiErrorResult(err);
       }
     },
   );
 
-  // --- reject_proposal ---
   mcp.registerTool(
     'reject_proposal',
     {
@@ -117,7 +76,6 @@ export function registerAgentMandateTools(mcp: McpServer, client: AgledgerClient
         mandateId: z.string().describe('UUID of the proposed mandate'),
         reason: z.string().optional().describe('Reason for rejection'),
       },
-      outputSchema: MandateOutputSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: true,
@@ -129,17 +87,13 @@ export function registerAgentMandateTools(mcp: McpServer, client: AgledgerClient
     async (args) => {
       try {
         const mandate = await client.mandates.reject(args.mandateId, args.reason);
-        return {
-          content: [{ type: 'text', text: `Mandate ${mandate.id} rejected (${mandate.status}).` }],
-          structuredContent: mandate as unknown as Record<string, unknown>,
-        };
+        return { content: [], structuredContent: toStructuredContent(mandate) };
       } catch (err) {
         return apiErrorResult(err);
       }
     },
   );
 
-  // --- counter_proposal ---
   mcp.registerTool(
     'counter_proposal',
     {
@@ -153,7 +107,6 @@ export function registerAgentMandateTools(mcp: McpServer, client: AgledgerClient
         counterCommissionPct: z.number().optional().describe('Modified commission percentage'),
         message: z.string().optional().describe('Message explaining the counter-proposal'),
       },
-      outputSchema: MandateOutputSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
@@ -171,17 +124,13 @@ export function registerAgentMandateTools(mcp: McpServer, client: AgledgerClient
           counterDeadline: args.counterDeadline,
           counterCommissionPct: args.counterCommissionPct ?? undefined,
         });
-        return {
-          content: [{ type: 'text', text: `Mandate ${mandate.id} counter-proposed (${mandate.status}).` }],
-          structuredContent: mandate as unknown as Record<string, unknown>,
-        };
+        return { content: [], structuredContent: toStructuredContent(mandate) };
       } catch (err) {
         return apiErrorResult(err);
       }
     },
   );
 
-  // --- accept_counter_proposal ---
   mcp.registerTool(
     'accept_counter_proposal',
     {
@@ -190,7 +139,6 @@ export function registerAgentMandateTools(mcp: McpServer, client: AgledgerClient
       inputSchema: {
         mandateId: z.string().describe('UUID of the counter-proposed mandate'),
       },
-      outputSchema: MandateOutputSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
@@ -202,24 +150,19 @@ export function registerAgentMandateTools(mcp: McpServer, client: AgledgerClient
     async (args) => {
       try {
         const mandate = await client.mandates.acceptCounter(args.mandateId);
-        return {
-          content: [{ type: 'text', text: `Counter-proposal on ${mandate.id} accepted (${mandate.status}).` }],
-          structuredContent: mandate as unknown as Record<string, unknown>,
-        };
+        return { content: [], structuredContent: toStructuredContent(mandate) };
       } catch (err) {
         return apiErrorResult(err);
       }
     },
   );
 
-  // --- list_my_proposals ---
   mcp.registerTool(
     'list_my_proposals',
     {
       title: 'List My Proposals',
       description: 'List mandate proposals awaiting my response as performer.',
       inputSchema: {},
-      outputSchema: PageOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -231,24 +174,19 @@ export function registerAgentMandateTools(mcp: McpServer, client: AgledgerClient
     async () => {
       try {
         const result = await client.mandates.listProposals();
-        return {
-          content: [{ type: 'text', text: `Found ${result.data.length} proposals.` }],
-          structuredContent: result as unknown as Record<string, unknown>,
-        };
+        return { content: [], structuredContent: toStructuredContent(result) };
       } catch (err) {
         return apiErrorResult(err);
       }
     },
   );
 
-  // --- list_principal_mandates ---
   mcp.registerTool(
     'list_principal_mandates',
     {
       title: 'List Principal Mandates',
       description: 'List mandates where I am the principal (the one who proposed/created them).',
       inputSchema: {},
-      outputSchema: PageOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -260,17 +198,13 @@ export function registerAgentMandateTools(mcp: McpServer, client: AgledgerClient
     async () => {
       try {
         const result = await client.mandates.listAsPrincipal();
-        return {
-          content: [{ type: 'text', text: `Found ${result.data.length} mandates as principal.` }],
-          structuredContent: result as unknown as Record<string, unknown>,
-        };
+        return { content: [], structuredContent: toStructuredContent(result) };
       } catch (err) {
         return apiErrorResult(err);
       }
     },
   );
 
-  // --- get_delegation_chain ---
   mcp.registerTool(
     'get_delegation_chain',
     {
@@ -279,9 +213,6 @@ export function registerAgentMandateTools(mcp: McpServer, client: AgledgerClient
       inputSchema: {
         mandateId: z.string().describe('UUID of any mandate in the chain'),
       },
-      outputSchema: z.object({
-        chain: z.array(MandateOutputSchema),
-      }),
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -293,17 +224,13 @@ export function registerAgentMandateTools(mcp: McpServer, client: AgledgerClient
     async (args) => {
       try {
         const chain = await client.mandates.getChain(args.mandateId);
-        return {
-          content: [{ type: 'text', text: `Delegation chain has ${chain.length} mandates.` }],
-          structuredContent: { chain } as unknown as Record<string, unknown>,
-        };
+        return { content: [], structuredContent: toStructuredContent({ chain }) };
       } catch (err) {
         return apiErrorResult(err);
       }
     },
   );
 
-  // --- get_sub_mandates ---
   mcp.registerTool(
     'get_sub_mandates',
     {
@@ -312,7 +239,6 @@ export function registerAgentMandateTools(mcp: McpServer, client: AgledgerClient
       inputSchema: {
         mandateId: z.string().describe('UUID of the parent mandate'),
       },
-      outputSchema: PageOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -324,10 +250,7 @@ export function registerAgentMandateTools(mcp: McpServer, client: AgledgerClient
     async (args) => {
       try {
         const result = await client.mandates.getSubMandates(args.mandateId);
-        return {
-          content: [{ type: 'text', text: `Found ${result.data.length} sub-mandates.` }],
-          structuredContent: result as unknown as Record<string, unknown>,
-        };
+        return { content: [], structuredContent: toStructuredContent(result) };
       } catch (err) {
         return apiErrorResult(err);
       }

@@ -1,13 +1,10 @@
-/** AGLedger™ — Enterprise MCP tools (agent approval, config). Patent Pending. Copyright 2026 AGLedger LLC. All rights reserved. */
-
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { AgledgerClient } from '@agledger/sdk';
-import { apiErrorResult } from '../errors.js';
+import { apiErrorResult, toStructuredContent } from '../errors.js';
 import { toolMeta } from '../tool-scopes.js';
 
 export function registerEnterpriseTools(mcp: McpServer, client: AgledgerClient): void {
-  // --- approve_enterprise_agent ---
   mcp.registerTool(
     'approve_enterprise_agent',
     {
@@ -31,17 +28,13 @@ export function registerEnterpriseTools(mcp: McpServer, client: AgledgerClient):
         const record = await client.enterprises.approveAgent(args.enterpriseId, args.agentId, {
           reason: args.reason,
         });
-        return {
-          content: [{ type: 'text', text: `Agent ${args.agentId} approved for enterprise ${args.enterpriseId}.` }],
-          structuredContent: record as unknown as Record<string, unknown>,
-        };
+        return { content: [], structuredContent: toStructuredContent(record) };
       } catch (err) {
         return apiErrorResult(err);
       }
     },
   );
 
-  // --- revoke_enterprise_agent ---
   mcp.registerTool(
     'revoke_enterprise_agent',
     {
@@ -65,17 +58,13 @@ export function registerEnterpriseTools(mcp: McpServer, client: AgledgerClient):
         await client.enterprises.revokeAgent(args.enterpriseId, args.agentId, {
           reason: args.reason,
         });
-        return {
-          content: [{ type: 'text', text: `Agent ${args.agentId} revoked from enterprise ${args.enterpriseId}.` }],
-          structuredContent: { enterpriseId: args.enterpriseId, agentId: args.agentId, status: 'revoked' },
-        };
+        return { content: [], structuredContent: { enterpriseId: args.enterpriseId, agentId: args.agentId, status: 'revoked' } };
       } catch (err) {
         return apiErrorResult(err);
       }
     },
   );
 
-  // --- list_enterprise_agents ---
   mcp.registerTool(
     'list_enterprise_agents',
     {
@@ -102,17 +91,13 @@ export function registerEnterpriseTools(mcp: McpServer, client: AgledgerClient):
           limit: args.limit,
           offset: args.offset,
         });
-        return {
-          content: [{ type: 'text', text: `Found ${result.data.length} agents for enterprise ${args.enterpriseId}.` }],
-          structuredContent: result as unknown as Record<string, unknown>,
-        };
+        return { content: [], structuredContent: toStructuredContent(result) };
       } catch (err) {
         return apiErrorResult(err);
       }
     },
   );
 
-  // --- create_enterprise ---
   mcp.registerTool(
     'create_enterprise',
     {
@@ -127,13 +112,6 @@ export function registerEnterpriseTools(mcp: McpServer, client: AgledgerClient):
         email: z.string().optional().describe('Contact email'),
         trustLevel: z.enum(['sandbox', 'active', 'verified']).optional().describe('Initial trust level (default: sandbox)'),
       },
-      outputSchema: {
-        id: z.string().describe('Enterprise UUID'),
-        name: z.string().describe('Enterprise display name'),
-        slug: z.string().describe('URL-safe identifier'),
-        trustLevel: z.string(),
-        createdAt: z.string().describe('ISO 8601 creation timestamp'),
-      },
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
@@ -145,17 +123,13 @@ export function registerEnterpriseTools(mcp: McpServer, client: AgledgerClient):
     async (args) => {
       try {
         const enterprise = await client.admin.createEnterprise({ name: args.name, slug: args.slug });
-        return {
-          content: [{ type: 'text', text: `Enterprise "${enterprise.name}" created (${enterprise.id}, slug: ${enterprise.slug}). Next: create an API key with POST /v1/admin/api-keys, then register agents.` }],
-          structuredContent: enterprise as unknown as Record<string, unknown>,
-        };
+        return { content: [], structuredContent: toStructuredContent(enterprise) };
       } catch (err) {
         return apiErrorResult(err);
       }
     },
   );
 
-  // --- create_agent ---
   mcp.registerTool(
     'create_agent',
     {
@@ -172,13 +146,6 @@ export function registerEnterpriseTools(mcp: McpServer, client: AgledgerClient):
         email: z.string().optional().describe('Contact email'),
         trustLevel: z.enum(['sandbox', 'active', 'verified']).optional().describe('Initial trust level (default: sandbox)'),
       },
-      outputSchema: {
-        id: z.string().describe('Agent UUID'),
-        displayName: z.string().nullable().describe('Agent display name'),
-        slug: z.string().describe('URL-safe identifier'),
-        trustLevel: z.string(),
-        createdAt: z.string().describe('ISO 8601 creation timestamp'),
-      },
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
@@ -194,17 +161,13 @@ export function registerEnterpriseTools(mcp: McpServer, client: AgledgerClient):
           slug: args.slug,
           enterpriseId: args.enterpriseId,
         });
-        return {
-          content: [{ type: 'text', text: `Agent "${agent.displayName}" created (${agent.id}, slug: ${agent.slug}). Next: create an API key with POST /v1/admin/api-keys, then set capabilities.` }],
-          structuredContent: agent as unknown as Record<string, unknown>,
-        };
+        return { content: [], structuredContent: toStructuredContent(agent) };
       } catch (err) {
         return apiErrorResult(err);
       }
     },
   );
 
-  // --- set_enterprise_config ---
   mcp.registerTool(
     'set_enterprise_config',
     {
@@ -231,10 +194,7 @@ export function registerEnterpriseTools(mcp: McpServer, client: AgledgerClient):
     async (args) => {
       try {
         const result = await client.admin.setEnterpriseConfig(args.enterpriseId, args.config);
-        return {
-          content: [{ type: 'text', text: `Configuration replaced for enterprise ${args.enterpriseId}.` }],
-          structuredContent: result as unknown as Record<string, unknown>,
-        };
+        return { content: [], structuredContent: toStructuredContent(result) };
       } catch (err) {
         return apiErrorResult(err);
       }
