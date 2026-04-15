@@ -28,12 +28,16 @@ describe('tool registration', () => {
     expect(tool).toBeDefined();
     expect(tool!.description).toContain('health');
     expect(tool!.description).toContain('identity');
+    expect(tool!.description).toContain('quickstart');
   });
 
   it('registers agledger_api', () => {
     const tool = tools.find((t) => t.name === 'agledger_api');
     expect(tool).toBeDefined();
     expect(tool!.description).toContain('nextSteps');
+    expect(tool!.description).toContain('/v1/');
+    expect(tool!.description).toContain('/v1/schemas');
+    expect(tool!.description).toContain('/v1/mandates');
   });
 });
 
@@ -61,6 +65,17 @@ describe('agledger_discover', () => {
     const content = result.structuredContent as Record<string, unknown>;
     expect(content.health).toEqual({ status: 'ok', version: '1.0.0' });
     expect(content.identity).toEqual({ agentId: 'agent-1', scopes: ['mandates:read'] });
+
+    // Quickstart workflow is always present
+    const quickstart = content.quickstart as { steps: Array<{ step: number; path: string }> };
+    expect(quickstart.steps).toHaveLength(4);
+    expect(quickstart.steps[0].path).toBe('/v1/schemas');
+    expect(quickstart.steps[2].path).toBe('/v1/mandates');
+
+    // Docs links are always present
+    const docs = content.docs as { quickReference: string; fullReference: string };
+    expect(docs.quickReference).toBe('/llms-agent.txt');
+    expect(docs.fullReference).toBe('/llms.txt');
   });
 
   it('returns partial results when one call fails', async () => {
@@ -192,7 +207,7 @@ describe('agledger_api', () => {
     expect(content.missingScopes).toEqual(['mandates:write']);
   });
 
-  it('rejects path not starting with /', async () => {
+  it('rejects path not starting with / with recovery directive', async () => {
     const result = await harness.client.callTool({
       name: 'agledger_api',
       arguments: { method: 'GET', path: 'mandates' },
@@ -200,10 +215,63 @@ describe('agledger_api', () => {
 
     expect(result.isError).toBe(true);
     const text = (result.content as Array<{ type: string; text: string }>)[0].text;
-    expect(text).toContain('Path must start with /');
+    expect(text).toContain('PATH_INVALID');
+    expect(text).toContain('/v1/');
+    expect(text).toContain('agledger_discover');
   });
 
-  it('handles network errors without crashing', async () => {
+  it('enriches API errors with recovery hint when suggestion is missing', async () => {
+    const errorBody = {
+      message: 'Invalid contract type',
+      code: 'BAD_REQUEST',
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValueOnce(
+        new Response(JSON.stringify(errorBody), {
+          status: 400,
+          headers: { 'content-type': 'application/json' },
+        }),
+      ),
+    );
+
+    const result = await harness.client.callTool({
+      name: 'agledger_api',
+      arguments: { method: 'POST', path: '/v1/mandates', params: { contractType: 'INVALID' } },
+    });
+
+    expect(result.isError).toBe(true);
+    const content = result.structuredContent as Record<string, unknown>;
+    expect(content.suggestion).toContain('/v1/schemas');
+  });
+
+  it('preserves existing API suggestion without overwriting', async () => {
+    const errorBody = {
+      message: 'Mandate not found',
+      code: 'NOT_FOUND',
+      suggestion: 'The mandate may have been deleted.',
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValueOnce(
+        new Response(JSON.stringify(errorBody), {
+          status: 404,
+          headers: { 'content-type': 'application/json' },
+        }),
+      ),
+    );
+
+    const result = await harness.client.callTool({
+      name: 'agledger_api',
+      arguments: { method: 'GET', path: '/v1/mandates/bad-id' },
+    });
+
+    expect(result.isError).toBe(true);
+    const content = result.structuredContent as Record<string, unknown>;
+    expect(content.suggestion).toBe('The mandate may have been deleted.');
+  });
+
+  it('handles network errors with recovery directive', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockRejectedValueOnce(new TypeError('fetch failed: DNS resolution failed')),
@@ -216,10 +284,11 @@ describe('agledger_api', () => {
 
     expect(result.isError).toBe(true);
     const text = (result.content as Array<{ type: string; text: string }>)[0].text;
-    expect(text).toContain('Network error');
+    expect(text).toContain('NETWORK_ERROR');
+    expect(text).toContain('/health');
   });
 
-  it('handles timeout without crashing', async () => {
+  it('handles timeout with recovery directive', async () => {
     vi.stubGlobal(
       'fetch',
       vi
@@ -236,7 +305,8 @@ describe('agledger_api', () => {
 
     expect(result.isError).toBe(true);
     const text = (result.content as Array<{ type: string; text: string }>)[0].text;
-    expect(text).toContain('timed out');
+    expect(text).toContain('TIMEOUT');
+    expect(text).toContain('Retry');
   });
 
   it('handles non-JSON responses', async () => {

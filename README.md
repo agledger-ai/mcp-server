@@ -2,7 +2,7 @@
 
 The official [MCP](https://modelcontextprotocol.io) server for the [AGLedger](https://agledger.ai) API -- accountability and audit infrastructure for agentic systems.
 
-Connects any MCP-compatible AI agent (Claude, Cursor, Windsurf, etc.) to the AGLedger API with profile-based tool selection. No SDK code required -- just point your agent at this server.
+Connects any MCP-compatible AI agent (Claude, Cursor, Windsurf, etc.) to the AGLedger API with just 2 universal tools. No SDK code required -- just point your agent at this server.
 
 ## Install
 
@@ -19,10 +19,7 @@ Add to your MCP client configuration (e.g. `claude_desktop_config.json`):
   "mcpServers": {
     "agledger": {
       "command": "agledger-mcp",
-      "args": ["--profile", "agent"],
-      "env": {
-        "AGLEDGER_API_KEY": "your-api-key"
-      }
+      "args": ["--api-key", "your-api-key"]
     }
   }
 }
@@ -31,23 +28,26 @@ Add to your MCP client configuration (e.g. `claude_desktop_config.json`):
 Or run directly:
 
 ```bash
-agledger-mcp --api-key <key> --profile agent
+agledger-mcp --api-key <key> [--api-url <url>]
 ```
 
-## Profiles
+## Tools
 
-The `--profile` flag is required. Each profile exposes a curated set of tools optimized for a specific agent persona:
+| Tool | Description |
+|------|-------------|
+| `agledger_discover` | Returns API health, your identity, available scopes, and a quickstart workflow. Call this first. |
+| `agledger_api` | Make any AGLedger API call (method, path, params). The API returns `nextSteps` on every response for self-guided workflow discovery. |
 
-| Profile | Tools | Use Case |
-|---------|-------|----------|
-| `agent` | ~21 | Standard agent workflow: create mandates, submit receipts, verdicts, verification |
-| `admin` | ~41 | Enterprise management: mandates, receipts, agents, capabilities, reputation, federation admin |
-| `audit` | ~36 | Compliance monitoring: mandates, receipts, events, verification, disputes, dashboard |
-| `schema-dev` | ~17 | Custom contract type authoring with workflow guidance |
-| `openclaw` | 5 | Lightweight notarization for agent-to-agent agreements |
-| `code` | 2 | Power-user mode: execute SDK code directly via `sdk_execute` |
-| `federation` | ~52 | Federation gateway operations + admin |
-| `full` | ~124 | All tools (development/debugging only) |
+### Agent workflow
+
+The `agledger_discover` tool returns a quickstart workflow that guides agents through the accountability flow:
+
+1. `GET /v1/schemas` -- list available contract types
+2. `GET /v1/schemas/{type}` -- get required fields and examples
+3. `POST /v1/mandates` -- create a mandate
+4. `POST /v1/mandates/{id}/receipts` -- submit evidence when done
+
+Every API error response includes a `suggestion` field with actionable recovery guidance -- agents can self-correct without human intervention.
 
 ## Configuration
 
@@ -55,8 +55,6 @@ The `--profile` flag is required. Each profile exposes a curated set of tools op
 |------|---------|-------------|
 | `--api-key` | `AGLEDGER_API_KEY` | AGLedger API key (required) |
 | `--api-url` | `AGLEDGER_API_URL` | API base URL (default: `https://agledger.example.com`) |
-| `--profile` | `AGLEDGER_PROFILE` | Tool profile (required) |
-| `--enterprise-id` | `AGLEDGER_ENTERPRISE_ID` | Enterprise ID for admin/enterprise tools |
 
 ## What is AGLedger?
 
