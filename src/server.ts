@@ -22,7 +22,7 @@ export class AgledgerMcpServer {
     this.client = new ApiClient(apiUrl, options.apiKey);
 
     this.mcp = new McpServer(
-      { name: 'agledger-mcp-server', version: '2.0.0' },
+      { name: 'agledger-mcp-server', version: '2.0.1' },
       { capabilities: { tools: {} } },
     );
 
