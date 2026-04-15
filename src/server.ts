@@ -1,145 +1,161 @@
+import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { AgledgerClient } from '@agledger/sdk';
-
-import { registerMandateTools } from './tools/mandates.js';
-import { registerAgentMandateTools } from './tools/agent-mandates.js';
-import { registerReceiptTools } from './tools/receipts.js';
-import { registerVerificationTools } from './tools/verification.js';
-import { registerDisputeTools } from './tools/disputes.js';
-import { registerReputationTools } from './tools/reputation.js';
-import { registerEventTools } from './tools/events.js';
-import { registerSchemaTools } from './tools/schemas.js';
-import { registerHealthTools } from './tools/health.js';
-import { registerCapabilityTools } from './tools/capabilities.js';
-import { registerA2aTools } from './tools/a2a.js';
-import { registerOpenClawTools } from './tools/openclaw.js';
-import { registerEnterpriseTools } from './tools/enterprises.js';
-import { registerDashboardTools } from './tools/dashboard.js';
-import { registerComplianceTools } from './tools/compliance.js';
-import { registerFederationTools } from './tools/federation.js';
-import { registerFederationAdminTools } from './tools/federation-admin.js';
-import { registerAgentsRefsTools } from './tools/agents-refs.js';
-import { registerVerificationKeysTools } from './tools/verification-keys.js';
-import { registerContractTypeResources } from './resources/contract-types.js';
-
-export type ToolProfile = 'full' | 'agent' | 'openclaw' | 'schema-dev' | 'admin' | 'audit' | 'federation';
+import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import { ApiClient } from './api-client.js';
 
 export interface AgledgerMcpServerOptions {
   apiKey: string;
   apiUrl?: string;
-  /** Tool profile: "agent", "openclaw", "schema-dev", "admin", "audit", "federation", or "full" (legacy, all individual tools). */
-  profile?: ToolProfile;
-  /** Enterprise ID for A2A search queries. Falls back to AGLEDGER_ENTERPRISE_ID env var. */
-  enterpriseId?: string;
 }
 
-type RegisterFn = (mcp: McpServer, client: AgledgerClient) => void;
-
-function buildProfileRegistry(enterpriseId?: string): Record<ToolProfile, RegisterFn[]> {
-  return {
-    openclaw: [registerOpenClawTools],
-    agent: [
-      (mcp, client) => registerA2aTools(mcp, client, { enterpriseId }),
-      (mcp, client) => registerReceiptTools(mcp, client, { skipSubmit: true }),
-      registerVerificationTools,
-      registerAgentsRefsTools,
-      registerHealthTools,
-    ],
-    'schema-dev': [registerSchemaTools, registerHealthTools],
-    admin: [
-      registerMandateTools,
-      registerReceiptTools,
-      registerEnterpriseTools,
-      registerCapabilityTools,
-      registerReputationTools,
-      registerAgentsRefsTools,
-      registerFederationAdminTools,
-      registerHealthTools,
-      registerVerificationKeysTools,
-    ],
-    federation: [
-      registerFederationTools,
-      registerFederationAdminTools,
-      registerAgentsRefsTools,
-      registerHealthTools,
-    ],
-    audit: [
-      registerMandateTools,
-      registerReceiptTools,
-      registerEventTools,
-      registerVerificationTools,
-      registerDisputeTools,
-      registerReputationTools,
-      registerDashboardTools,
-      registerComplianceTools,
-      registerAgentsRefsTools,
-      registerHealthTools,
-      registerVerificationKeysTools,
-    ],
-    full: [
-      registerMandateTools,
-      registerAgentMandateTools,
-      registerReceiptTools,
-      registerVerificationTools,
-      registerDisputeTools,
-      registerReputationTools,
-      registerEventTools,
-      registerSchemaTools,
-      registerHealthTools,
-      registerCapabilityTools,
-      registerEnterpriseTools,
-      registerDashboardTools,
-      registerComplianceTools,
-      registerFederationTools,
-      registerFederationAdminTools,
-      registerAgentsRefsTools,
-      registerVerificationKeysTools,
-    ],
-  };
-}
-
-/** Exported for testing — returns the profile registry for a given enterpriseId. */
-export function getProfileRegistry(enterpriseId?: string): Record<ToolProfile, RegisterFn[]> {
-  return buildProfileRegistry(enterpriseId);
+function errorResult(message: string): CallToolResult {
+  return { content: [{ type: 'text', text: `Error: ${message}` }], isError: true };
 }
 
 export class AgledgerMcpServer {
   readonly mcp: McpServer;
-  readonly client: AgledgerClient;
-  readonly profile: ToolProfile;
-  private readonly enterpriseId?: string;
+  readonly client: ApiClient;
 
   constructor(options: AgledgerMcpServerOptions) {
-    this.profile = options.profile ?? 'full';
-    this.enterpriseId = options.enterpriseId;
+    const apiUrl = options.apiUrl ?? 'https://agledger.example.com';
+
+    this.client = new ApiClient(apiUrl, options.apiKey);
 
     this.mcp = new McpServer(
-      {
-        name: 'agledger-mcp-server',
-        version: '1.5.0',
-      },
-      {
-        capabilities: {
-          tools: {},
-          resources: {},
-        },
-      },
+      { name: 'agledger-mcp-server', version: '2.0.0' },
+      { capabilities: { tools: {} } },
     );
-
-    this.client = new AgledgerClient({
-      apiKey: options.apiKey,
-      baseUrl: options.apiUrl ?? 'https://agledger.example.com',
-    });
 
     this.registerTools();
   }
 
   private registerTools(): void {
-    const registry = buildProfileRegistry(this.enterpriseId);
-    const fns = registry[this.profile];
-    for (const fn of fns) {
-      fn(this.mcp, this.client);
-    }
-    registerContractTypeResources(this.mcp, this.client);
+    const client = this.client;
+
+    this.mcp.registerTool(
+      'agledger_discover',
+      {
+        title: 'Discover AGLedger API',
+        description:
+          'Returns API health, your identity, and available scopes. ' +
+          'Call this first to understand what you can do. ' +
+          'The response includes nextSteps guiding you to available endpoints.',
+        inputSchema: {},
+        annotations: {
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: true,
+        },
+      },
+      async () => {
+        try {
+          const [health, identity] = await Promise.allSettled([
+            client.request('GET', '/health'),
+            client.request('GET', '/v1/auth/me'),
+          ]);
+
+          const result: Record<string, unknown> = {};
+
+          if (health.status === 'fulfilled') {
+            result.health = health.value.body;
+          } else {
+            result.health = {
+              error: health.reason instanceof Error ? health.reason.message : String(health.reason),
+            };
+          }
+
+          if (identity.status === 'fulfilled') {
+            result.identity = identity.value.body;
+          } else {
+            result.identity = {
+              error:
+                identity.reason instanceof Error
+                  ? identity.reason.message
+                  : String(identity.reason),
+            };
+          }
+
+          return { content: [], structuredContent: result };
+        } catch (err) {
+          return errorResult(err instanceof Error ? err.message : String(err));
+        }
+      },
+    );
+
+    this.mcp.registerTool(
+      'agledger_api',
+      {
+        title: 'AGLedger API',
+        description:
+          'Make any AGLedger API call. The API returns nextSteps on every response to guide you. ' +
+          'Start with agledger_discover to see available endpoints, then follow nextSteps. ' +
+          'Common entry points: /mandates, /schemas, /health, /auth/me, /agents/{agentId}/reputation. ' +
+          'For GET/DELETE, params become query parameters. For POST/PUT/PATCH, params become the JSON body.',
+        inputSchema: {
+          method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).describe('HTTP method'),
+          path: z.string().describe('API path (e.g. /mandates, /schemas, /mandates/{id}/receipts)'),
+          params: z
+            .record(z.string(), z.unknown())
+            .optional()
+            .describe(
+              'Request parameters. For GET/DELETE: query params. For POST/PUT/PATCH: JSON body.',
+            ),
+        },
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: false,
+          openWorldHint: true,
+        },
+      },
+      async (args) => {
+        try {
+          const { method, path, params } = args;
+
+          if (!path.startsWith('/')) {
+            return errorResult('Path must start with /');
+          }
+
+          const options: { query?: Record<string, unknown>; body?: unknown } = {};
+
+          if (params) {
+            if (method === 'GET' || method === 'DELETE') {
+              options.query = params;
+            } else {
+              options.body = params;
+            }
+          }
+
+          const response = await client.request(method, path, options);
+
+          if (response.ok) {
+            return {
+              content: [],
+              structuredContent: response.body as Record<string, unknown>,
+            };
+          }
+
+          const errorBody = (response.body ?? {}) as Record<string, unknown>;
+          const message = (errorBody.message ??
+            errorBody.error ??
+            `API returned ${response.status}`) as string;
+
+          return {
+            content: [{ type: 'text', text: `Error: ${message}` }],
+            structuredContent: errorBody,
+            isError: true,
+          };
+        } catch (err) {
+          if (err instanceof DOMException && err.name === 'AbortError') {
+            return errorResult('Request timed out. The API did not respond within 30 seconds.');
+          }
+          if (err instanceof TypeError && err.message.includes('fetch')) {
+            return errorResult(`Network error: ${err.message}. Check API URL and connectivity.`);
+          }
+          return errorResult(err instanceof Error ? err.message : String(err));
+        }
+      },
+    );
   }
 }
