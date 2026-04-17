@@ -6,6 +6,8 @@ import { ApiClient } from './api-client.js';
 export interface AgledgerMcpServerOptions {
   apiKey: string;
   apiUrl?: string;
+  /** Request timeout in milliseconds. Default 30000. */
+  timeoutMs?: number;
 }
 
 const QUICKSTART = {
@@ -19,43 +21,27 @@ const QUICKSTART = {
 } as const;
 
 const DOCS = {
-  quickReference: '/llms-agent.txt',
-  fullReference: '/llms.txt',
+  description:
+    'Every API response includes nextSteps for self-guided workflow discovery. ' +
+    'Call GET /openapi.json (also exposed as the agledger://openapi resource) for the full route catalog.',
+  openapi: '/openapi.json',
+  openapiResource: 'agledger://openapi',
 } as const;
 
-function errorResult(message: string): CallToolResult {
-  return { content: [{ type: 'text', text: `Error: ${message}` }], isError: true };
-}
-
-function recoveryHint(status: number, method: string, path: string): string {
-  if (status === 400) {
-    return `Check required fields. Call GET /v1/schemas to see valid contract types, or GET /v1/schemas/{type} for the exact schema.`;
-  }
-  if (status === 401) {
-    return 'API key is invalid or expired. Call agledger_discover to verify your identity.';
-  }
-  if (status === 403) {
-    return 'Your API key lacks the required scope. Check the missingScopes field above.';
-  }
-  if (status === 404) {
-    if (path.includes('/mandates/') && method === 'POST' && path.includes('/receipts')) {
-      return 'Mandate not found. Call GET /v1/mandates to list your mandates and verify the ID.';
-    }
-    return `Resource not found at ${path}. All routes start with /v1/. Call GET /llms-agent.txt for the full API reference.`;
-  }
-  if (status === 409) {
-    return 'Conflict — the resource state does not allow this action. Check the mandate status with GET /v1/mandates/{id}.';
-  }
-  if (status === 422) {
-    return 'Validation failed. Check the validationErrors field above for specific field issues. Call GET /v1/schemas/{type} for the expected format.';
-  }
-  if (status === 429) {
-    return 'Rate limited. Wait a moment, then retry the same request.';
-  }
-  if (status >= 500) {
-    return 'Server error. Retry the same request. If it persists, try GET /health to check API status.';
-  }
-  return `Unexpected status ${status}. Try GET /health to verify API status.`;
+/**
+ * Structured error for CLI-origin failures (network, timeout, malformed input).
+ * API-origin errors are forwarded verbatim without enrichment — if the API
+ * returns a suggestion, agents see it; if not, that's an API concern to fix upstream.
+ */
+function errorResult(message: string, code?: string, suggestion?: string): CallToolResult {
+  const structuredContent: Record<string, unknown> = { error: true, message };
+  if (code) structuredContent.code = code;
+  if (suggestion) structuredContent.suggestion = suggestion;
+  return {
+    content: [{ type: 'text', text: `Error: ${message}` }],
+    structuredContent,
+    isError: true,
+  };
 }
 
 export class AgledgerMcpServer {
@@ -65,14 +51,15 @@ export class AgledgerMcpServer {
   constructor(options: AgledgerMcpServerOptions) {
     const apiUrl = options.apiUrl ?? 'https://agledger.example.com';
 
-    this.client = new ApiClient(apiUrl, options.apiKey);
+    this.client = new ApiClient(apiUrl, options.apiKey, options.timeoutMs);
 
     this.mcp = new McpServer(
-      { name: 'agledger-mcp-server', version: '2.0.2' },
-      { capabilities: { tools: {} } },
+      { name: 'agledger-mcp-server', version: '2.1.0' },
+      { capabilities: { tools: {}, resources: {} } },
     );
 
     this.registerTools();
+    this.registerResources();
   }
 
   private registerTools(): void {
@@ -126,7 +113,7 @@ export class AgledgerMcpServer {
 
           return { content: [], structuredContent: result };
         } catch (err) {
-          return errorResult(err instanceof Error ? err.message : String(err));
+          return errorResult(err instanceof Error ? err.message : String(err), 'DISCOVER_FAILED');
         }
       },
     );
@@ -143,7 +130,7 @@ export class AgledgerMcpServer {
           '3. POST /v1/mandates — create a mandate. ' +
           '4. POST /v1/mandates/{id}/receipts — submit evidence when done. ' +
           'If a call fails, read the suggestion field in the error response. ' +
-          'For full API docs: GET /llms-agent.txt. ' +
+          'For the full API catalog, GET /openapi.json (or read the agledger://openapi resource). ' +
           'For GET/DELETE, params become query parameters. For POST/PUT/PATCH, params become the JSON body.',
         inputSchema: {
           method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).describe('HTTP method'),
@@ -170,8 +157,10 @@ export class AgledgerMcpServer {
 
           if (!path.startsWith('/')) {
             return errorResult(
-              'PATH_INVALID: Path must start with /. All API routes use /v1/ prefix. ' +
+              'Path must start with /. All API routes use /v1/ prefix. ' +
                 'Example: /v1/mandates, /v1/schemas. Call agledger_discover for the full workflow.',
+              'PATH_INVALID',
+              'Prefix the path with /v1/ (e.g. /v1/mandates). Call agledger_discover if unsure which path to use.',
             );
           }
 
@@ -194,14 +183,12 @@ export class AgledgerMcpServer {
             };
           }
 
+          // Forward the API error body verbatim. The API owns error guidance;
+          // the MCP does not enrich, translate, or inject suggestions.
           const errorBody = (response.body ?? {}) as Record<string, unknown>;
           const message = (errorBody.message ??
             errorBody.error ??
             `API returned ${response.status}`) as string;
-
-          if (!errorBody.suggestion) {
-            errorBody.suggestion = recoveryHint(response.status, method, path);
-          }
 
           return {
             content: [{ type: 'text', text: `Error: ${message}` }],
@@ -211,18 +198,55 @@ export class AgledgerMcpServer {
         } catch (err) {
           if (err instanceof DOMException && err.name === 'AbortError') {
             return errorResult(
-              'TIMEOUT: The API did not respond within 30 seconds. ' +
-                'Retry the same request. If it fails again, try GET /health to check API status.',
+              'The API did not respond in time. Retry the same request.',
+              'TIMEOUT',
+              'Retry the same request. Increase --timeout if your instance is slow to respond.',
             );
           }
           if (err instanceof TypeError && err.message.includes('fetch')) {
             return errorResult(
-              `NETWORK_ERROR: ${err.message}. ` +
-                'Check that the API URL is correct. Try GET /health to verify connectivity.',
+              err.message,
+              'NETWORK_ERROR',
+              'Check that the API URL is correct. Try GET /health to verify connectivity.',
             );
           }
-          return errorResult(err instanceof Error ? err.message : String(err));
+          return errorResult(err instanceof Error ? err.message : String(err), 'UNKNOWN_ERROR');
         }
+      },
+    );
+  }
+
+  private registerResources(): void {
+    const client = this.client;
+
+    /**
+     * Proxies GET /openapi.json at read time. Keeps the spec fresh — no local
+     * cache that could go stale. Clients (Claude Desktop, etc.) surface this
+     * in their resource picker, so users/agents can pull the spec into context
+     * without constructing an `agledger_api` call.
+     */
+    this.mcp.registerResource(
+      'agledger-openapi',
+      'agledger://openapi',
+      {
+        description:
+          'The AGLedger API OpenAPI 3.0 specification. Fetches live from GET /openapi.json — always current with the running API instance.',
+        mimeType: 'application/json',
+      },
+      async () => {
+        const response = await client.request('GET', '/openapi.json');
+        if (!response.ok) {
+          throw new Error(`Failed to fetch /openapi.json: HTTP ${response.status}`);
+        }
+        return {
+          contents: [
+            {
+              uri: 'agledger://openapi',
+              mimeType: 'application/json',
+              text: typeof response.body === 'string' ? response.body : JSON.stringify(response.body),
+            },
+          ],
+        };
       },
     );
   }

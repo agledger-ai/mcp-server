@@ -41,6 +41,52 @@ describe('tool registration', () => {
   });
 });
 
+describe('resource registration', () => {
+  it('registers the agledger://openapi resource', async () => {
+    const { resources } = await harness.client.listResources();
+    const openapi = resources.find((r) => r.uri === 'agledger://openapi');
+    expect(openapi).toBeDefined();
+    expect(openapi!.mimeType).toBe('application/json');
+    expect(openapi!.description).toContain('OpenAPI');
+  });
+
+  it('reads the openapi resource by proxying to GET /openapi.json', async () => {
+    const spec = { openapi: '3.0.3', info: { title: 'AGLedger API' }, paths: {} };
+    const mockFetch = vi.fn().mockResolvedValueOnce(
+      new Response(JSON.stringify(spec), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    vi.stubGlobal('fetch', mockFetch);
+
+    const result = await harness.client.readResource({ uri: 'agledger://openapi' });
+    expect(result.contents).toHaveLength(1);
+    const content = result.contents[0];
+    expect(content.uri).toBe('agledger://openapi');
+    expect(content.mimeType).toBe('application/json');
+    expect(JSON.parse(content.text as string)).toEqual(spec);
+
+    // Confirm the proxy hit the right endpoint
+    const url = mockFetch.mock.calls[0][0] as string;
+    expect(url).toContain('/openapi.json');
+  });
+
+  it('surfaces upstream failure when /openapi.json is not reachable', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValueOnce(
+        new Response('not found', {
+          status: 404,
+          headers: { 'content-type': 'text/plain' },
+        }),
+      ),
+    );
+
+    await expect(harness.client.readResource({ uri: 'agledger://openapi' })).rejects.toThrow();
+  });
+});
+
 describe('agledger_discover', () => {
   it('returns health and identity on success', async () => {
     const mockFetch = vi
@@ -72,10 +118,11 @@ describe('agledger_discover', () => {
     expect(quickstart.steps[0].path).toBe('/v1/schemas');
     expect(quickstart.steps[2].path).toBe('/v1/mandates');
 
-    // Docs links are always present
-    const docs = content.docs as { quickReference: string; fullReference: string };
-    expect(docs.quickReference).toBe('/llms-agent.txt');
-    expect(docs.fullReference).toBe('/llms.txt');
+    // Docs hints always present — point at live API discovery and the openapi resource.
+    const docs = content.docs as { openapi: string; openapiResource: string; description: string };
+    expect(docs.openapi).toBe('/openapi.json');
+    expect(docs.openapiResource).toBe('agledger://openapi');
+    expect(docs.description).toContain('nextSteps');
   });
 
   it('returns partial results when one call fails', async () => {
@@ -214,13 +261,17 @@ describe('agledger_api', () => {
     });
 
     expect(result.isError).toBe(true);
+    const content = result.structuredContent as Record<string, unknown>;
+    expect(content.code).toBe('PATH_INVALID');
     const text = (result.content as Array<{ type: string; text: string }>)[0].text;
-    expect(text).toContain('PATH_INVALID');
     expect(text).toContain('/v1/');
     expect(text).toContain('agledger_discover');
+    expect(content.suggestion).toBeDefined();
   });
 
-  it('enriches API errors with recovery hint when suggestion is missing', async () => {
+  it('forwards API error body verbatim when suggestion is missing (no MCP-side enrichment)', async () => {
+    // Thin-passthrough contract: the API owns error guidance. The MCP must not
+    // inject a suggestion or any other field the API didn't return.
     const errorBody = {
       message: 'Invalid contract type',
       code: 'BAD_REQUEST',
@@ -242,7 +293,8 @@ describe('agledger_api', () => {
 
     expect(result.isError).toBe(true);
     const content = result.structuredContent as Record<string, unknown>;
-    expect(content.suggestion).toContain('/v1/schemas');
+    expect(content).toEqual(errorBody); // exact match — no added fields
+    expect(content.suggestion).toBeUndefined();
   });
 
   it('preserves existing API suggestion without overwriting', async () => {
@@ -283,9 +335,9 @@ describe('agledger_api', () => {
     });
 
     expect(result.isError).toBe(true);
-    const text = (result.content as Array<{ type: string; text: string }>)[0].text;
-    expect(text).toContain('NETWORK_ERROR');
-    expect(text).toContain('/health');
+    const content = result.structuredContent as Record<string, unknown>;
+    expect(content.code).toBe('NETWORK_ERROR');
+    expect(content.suggestion).toContain('/health');
   });
 
   it('handles timeout with recovery directive', async () => {
@@ -304,9 +356,9 @@ describe('agledger_api', () => {
     });
 
     expect(result.isError).toBe(true);
-    const text = (result.content as Array<{ type: string; text: string }>)[0].text;
-    expect(text).toContain('TIMEOUT');
-    expect(text).toContain('Retry');
+    const content = result.structuredContent as Record<string, unknown>;
+    expect(content.code).toBe('TIMEOUT');
+    expect(content.suggestion).toContain('Retry');
   });
 
   it('handles non-JSON responses', async () => {

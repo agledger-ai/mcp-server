@@ -36,7 +36,7 @@ export class ApiClient {
     const headers: Record<string, string> = {
       Authorization: `Bearer ${this.apiKey}`,
       Accept: 'application/json',
-      'User-Agent': 'agledger-mcp-server/2.0.2',
+      'User-Agent': 'agledger-mcp-server/2.1.0',
     };
 
     if (options?.body !== undefined) {

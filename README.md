@@ -65,12 +65,14 @@ AGLedger is the accountability layer for automated operations. It records what w
 - **Verdicts** -- principal acceptance decisions (PASS/FAIL) with settlement signals
 - **Audit trail** -- hash-chained, Ed25519-signed, tamper-evident record
 
-Learn more at [agledger.ai](https://agledger.ai) | [API docs](https://docs.agledger.ai)
+Learn more at [agledger.ai](https://www.agledger.ai) | [API docs](https://www.agledger.ai/docs/)
+
+Each self-hosted AGLedger instance also serves interactive Swagger UI at `{AGLEDGER_API_URL}/docs`.
 
 ## Requirements
 
 - Node.js >= 22
-- An AGLedger API key ([sign up](https://agledger.ai))
+- A running self-hosted AGLedger API instance and an API key (see the self-hosted install guide at [agledger.ai](https://www.agledger.ai))
 
 ## License
 
