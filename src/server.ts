@@ -1,8 +1,7 @@
 import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { verifyExport } from '@agledger/sdk/verify';
-import type { MandateAuditExport } from '@agledger/sdk/types';
+import { verifyExport, type MandateAuditExport } from './verify/verify-export.js';
 import { ApiClient } from './api-client.js';
 
 export interface AgledgerMcpServerOptions {
@@ -56,7 +55,7 @@ export class AgledgerMcpServer {
     this.client = new ApiClient(apiUrl, options.apiKey, options.timeoutMs);
 
     this.mcp = new McpServer(
-      { name: 'agledger-mcp-server', version: '2.1.1' },
+      { name: 'agledger-mcp-server', version: '2.1.2' },
       { capabilities: { tools: {}, resources: {} } },
     );
 
