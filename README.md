@@ -2,7 +2,7 @@
 
 The official [MCP](https://modelcontextprotocol.io) server for the [AGLedger](https://agledger.ai) API -- accountability and audit infrastructure for agentic systems.
 
-Connects any MCP-compatible AI agent (Claude, Cursor, Windsurf, etc.) to the AGLedger API with just 2 universal tools. No SDK code required -- just point your agent at this server.
+Connects any MCP-compatible AI agent (Claude, Cursor, Windsurf, etc.) to the AGLedger API with 2 universal API-pass-through tools plus an offline audit verifier. No SDK code required -- just point your agent at this server.
 
 ## Install
 
@@ -37,6 +37,7 @@ agledger-mcp --api-key <key> [--api-url <url>]
 |------|-------------|
 | `agledger_discover` | Returns API health, your identity, available scopes, and a quickstart workflow. Call this first. |
 | `agledger_api` | Make any AGLedger API call (method, path, params). The API returns `nextSteps` on every response for self-guided workflow discovery. |
+| `agledger_verify` | Verify a mandate audit export offline (RFC 8785 hash chain + Ed25519 signatures). No network calls. Returns `valid`, `verifiedEntries`, and a `brokenAt` pointer on failure. |
 
 ### Agent workflow
 
@@ -78,4 +79,4 @@ Each self-hosted AGLedger instance also serves interactive Swagger UI at `{AGLED
 
 Proprietary. See [LICENSE](./LICENSE).
 
-AGLedger™ and the Agentic Contract Specification™ are trademarks of AGLedger LLC. Patent pending.
+AGLedger, Agentic Ledger, Settlement Signal, and Agentic Operations and Accountability Protocol (AOAP) are trademarks of AGLedger LLC. Patent pending.

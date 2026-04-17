@@ -1,6 +1,6 @@
 {
   "name": "@agledger/mcp-server",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "AGLedger MCP Server — Thin API pass-through for AI agents via MCP protocol",
   "license": "SEE LICENSE IN LICENSE",
   "author": "AGLedger LLC",
@@ -39,6 +39,7 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@agledger/sdk": "0.5.1",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "zod": "^4.3.6"
   },

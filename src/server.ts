@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import { verifyExport } from '@agledger/sdk/verify';
+import type { MandateAuditExport } from '@agledger/sdk/types';
 import { ApiClient } from './api-client.js';
 
 export interface AgledgerMcpServerOptions {
@@ -54,7 +56,7 @@ export class AgledgerMcpServer {
     this.client = new ApiClient(apiUrl, options.apiKey, options.timeoutMs);
 
     this.mcp = new McpServer(
-      { name: 'agledger-mcp-server', version: '2.1.0' },
+      { name: 'agledger-mcp-server', version: '2.1.1' },
       { capabilities: { tools: {}, resources: {} } },
     );
 
@@ -211,6 +213,73 @@ export class AgledgerMcpServer {
             );
           }
           return errorResult(err instanceof Error ? err.message : String(err), 'UNKNOWN_ERROR');
+        }
+      },
+    );
+
+    this.mcp.registerTool(
+      'agledger_verify',
+      {
+        title: 'Verify Audit Export',
+        description:
+          'Verify an AGLedger audit export offline. Recomputes RFC 8785 canonical hashes, ' +
+          'walks the hash chain, and verifies every Ed25519 signature. ' +
+          'No network calls — trust is rooted in the export\'s embedded signing keys (and/or ' +
+          'the publicKeys override). On failure, brokenAt pinpoints the first entry that failed ' +
+          'and why (payload_hash_mismatch, chain_break, signature_invalid, unknown_key, ' +
+          'position_gap, malformed_entry, unsupported_algorithm). ' +
+          'Obtain the export via agledger_api with method=GET, path=/v1/mandates/{id}/audit-export.',
+        inputSchema: {
+          export: z
+            .record(z.string(), z.unknown())
+            .describe(
+              'The parsed audit export JSON (the response body from GET /v1/mandates/{id}/audit-export).',
+            ),
+          publicKeys: z
+            .record(z.string(), z.string())
+            .optional()
+            .describe(
+              'Optional map of signingKeyId → SPKI DER base64 public key. Merged over any keys ' +
+              'embedded in the export. Use this to verify against an independently-trusted key set.',
+            ),
+          requireKeyId: z
+            .string()
+            .optional()
+            .describe(
+              'If set, every entry must reference this keyId. Rejects exports signed by a ' +
+              'retired or unexpected key even if cryptographically valid.',
+            ),
+        },
+        annotations: {
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
+      },
+      async (args) => {
+        try {
+          const { export: exportData, publicKeys, requireKeyId } = args;
+          if (!exportData || typeof exportData !== 'object' || !('entries' in exportData)) {
+            return errorResult(
+              'Input is not a valid audit export. Expected an object with exportMetadata and entries.',
+              'INVALID_EXPORT',
+              'Call agledger_api with method=GET and path=/v1/mandates/{id}/audit-export, then pass the response body as the `export` argument.',
+            );
+          }
+
+          const result = verifyExport(exportData as unknown as MandateAuditExport, {
+            publicKeys,
+            requireKeyId,
+          });
+
+          return {
+            content: [],
+            structuredContent: result as unknown as Record<string, unknown>,
+            isError: !result.valid,
+          };
+        } catch (err) {
+          return errorResult(err instanceof Error ? err.message : String(err), 'VERIFY_FAILED');
         }
       },
     );

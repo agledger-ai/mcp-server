@@ -1,6 +1,13 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { createTestHarness, type TestHarness } from './harness.js';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const VECTORS_DIR = join(HERE, '..', '..', '..', 'testdata', 'verifier');
+const loadVector = (name: string) => JSON.parse(readFileSync(join(VECTORS_DIR, name), 'utf8'));
 
 let harness: TestHarness;
 let tools: Tool[];
@@ -19,8 +26,8 @@ afterEach(() => {
 });
 
 describe('tool registration', () => {
-  it('registers exactly 2 tools', () => {
-    expect(tools).toHaveLength(2);
+  it('registers exactly 3 tools', () => {
+    expect(tools).toHaveLength(3);
   });
 
   it('registers agledger_discover', () => {
@@ -38,6 +45,14 @@ describe('tool registration', () => {
     expect(tool!.description).toContain('/v1/');
     expect(tool!.description).toContain('/v1/schemas');
     expect(tool!.description).toContain('/v1/mandates');
+  });
+
+  it('registers agledger_verify', () => {
+    const tool = tools.find((t) => t.name === 'agledger_verify');
+    expect(tool).toBeDefined();
+    expect(tool!.description).toContain('offline');
+    expect(tool!.description).toContain('Ed25519');
+    expect(tool!.description).toContain('audit-export');
   });
 });
 
@@ -203,7 +218,7 @@ describe('agledger_api', () => {
     const errorBody = {
       message: 'Mandate not found',
       code: 'NOT_FOUND',
-      docUrl: 'https://docs.agledger.ai/errors/NOT_FOUND',
+      docUrl: 'https://www.agledger.ai/docs/errors/NOT_FOUND',
       suggestion: 'Check the mandate ID and try again.',
     };
     vi.stubGlobal(
@@ -223,7 +238,7 @@ describe('agledger_api', () => {
 
     expect(result.isError).toBe(true);
     const content = result.structuredContent as Record<string, unknown>;
-    expect(content.docUrl).toBe('https://docs.agledger.ai/errors/NOT_FOUND');
+    expect(content.docUrl).toBe('https://www.agledger.ai/docs/errors/NOT_FOUND');
     expect(content.suggestion).toBe('Check the mandate ID and try again.');
   });
 
@@ -404,5 +419,82 @@ describe('agledger_api', () => {
     const url = new URL(mockFetch.mock.calls[0][0] as string);
     expect(url.searchParams.get('status')).toBe('ACTIVE');
     expect(url.searchParams.get('limit')).toBe('20');
+  });
+});
+
+describe('agledger_verify', () => {
+  it('verifies a valid audit export offline', async () => {
+    const result = await harness.client.callTool({
+      name: 'agledger_verify',
+      arguments: { export: loadVector('valid-export.json') },
+    });
+
+    expect(result.isError).toBeFalsy();
+    const content = result.structuredContent as Record<string, unknown>;
+    expect(content.valid).toBe(true);
+    expect(content.verifiedEntries).toBe(3);
+    expect(content.totalEntries).toBe(3);
+  });
+
+  it('returns brokenAt for tampered payload', async () => {
+    const result = await harness.client.callTool({
+      name: 'agledger_verify',
+      arguments: { export: loadVector('tampered-payload.json') },
+    });
+
+    expect(result.isError).toBe(true);
+    const content = result.structuredContent as Record<string, unknown>;
+    expect(content.valid).toBe(false);
+    expect((content.brokenAt as Record<string, unknown>).position).toBe(2);
+    expect((content.brokenAt as Record<string, unknown>).reason).toBe('payload_hash_mismatch');
+  });
+
+  it('returns brokenAt for broken chain', async () => {
+    const result = await harness.client.callTool({
+      name: 'agledger_verify',
+      arguments: { export: loadVector('broken-chain.json') },
+    });
+
+    expect(result.isError).toBe(true);
+    const content = result.structuredContent as Record<string, unknown>;
+    expect((content.brokenAt as Record<string, unknown>).reason).toBe('chain_break');
+  });
+
+  it('makes no API calls (fully offline)', async () => {
+    const mockFetch = vi.fn();
+    vi.stubGlobal('fetch', mockFetch);
+
+    await harness.client.callTool({
+      name: 'agledger_verify',
+      arguments: { export: loadVector('valid-export.json') },
+    });
+
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('accepts publicKeys override', async () => {
+    const keys = loadVector('public-keys.json');
+    const result = await harness.client.callTool({
+      name: 'agledger_verify',
+      arguments: {
+        export: loadVector('valid-export.json'),
+        publicKeys: keys,
+      },
+    });
+
+    expect(result.isError).toBeFalsy();
+    expect((result.structuredContent as Record<string, unknown>).valid).toBe(true);
+  });
+
+  it('rejects malformed export input', async () => {
+    const result = await harness.client.callTool({
+      name: 'agledger_verify',
+      arguments: { export: { notAnExport: true } },
+    });
+
+    expect(result.isError).toBe(true);
+    const content = result.structuredContent as Record<string, unknown>;
+    expect(content.code).toBe('INVALID_EXPORT');
+    expect(content.suggestion).toContain('audit-export');
   });
 });
