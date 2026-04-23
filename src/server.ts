@@ -55,7 +55,7 @@ export class AgledgerMcpServer {
     this.client = new ApiClient(apiUrl, options.apiKey, options.timeoutMs);
 
     this.mcp = new McpServer(
-      { name: 'agledger-mcp-server', version: '2.1.2' },
+      { name: 'agledger-mcp-server', version: '2.2.0' },
       { capabilities: { tools: {}, resources: {} } },
     );
 
@@ -83,9 +83,10 @@ export class AgledgerMcpServer {
       },
       async () => {
         try {
-          const [health, identity] = await Promise.allSettled([
+          const [health, identity, scopeProfiles] = await Promise.allSettled([
             client.request('GET', '/health'),
             client.request('GET', '/v1/auth/me'),
+            client.request('GET', '/v1/scope-profiles'),
           ]);
 
           const result: Record<string, unknown> = {};
@@ -107,6 +108,10 @@ export class AgledgerMcpServer {
                   ? identity.reason.message
                   : String(identity.reason),
             };
+          }
+
+          if (scopeProfiles.status === 'fulfilled') {
+            result.scopeProfiles = scopeProfiles.value.body;
           }
 
           result.quickstart = QUICKSTART;

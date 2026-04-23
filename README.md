@@ -1,8 +1,16 @@
 # @agledger/mcp-server
 
-The official [MCP](https://modelcontextprotocol.io) server for the [AGLedger](https://agledger.ai) API -- accountability and audit infrastructure for agentic systems.
+The official [MCP](https://modelcontextprotocol.io) server for the [AGLedger](https://agledger.ai) API — accountability infrastructure for AI agents. The Layer 3 accountability layer of the agent stack.
 
-Connects any MCP-compatible AI agent (Claude, Cursor, Windsurf, etc.) to the AGLedger API with 2 universal API-pass-through tools plus an offline audit verifier. No SDK code required -- just point your agent at this server.
+Connects any MCP-compatible AI agent (Claude, Cursor, Windsurf, etc.) to the AGLedger API with 2 universal API-pass-through tools plus an offline audit verifier. No SDK code required — just point your agent at this server.
+
+**Learn more**
+
+- [agledger.ai](https://agledger.ai) — what AGLedger is and why Layer 3 accountability matters
+- [How it works](https://agledger.ai/how-it-works) — the four-endpoint lifecycle: mandate, receipt, verdict, fulfill
+- [Glossary](https://agledger.ai/glossary) — canonical definitions of Mandate, Receipt, Verdict, Settlement Signal
+- [MCP Server guide](https://agledger.ai/docs/guides/mcp-server) — installation and agent workflow
+- [Protocol (AOAP)](https://agledger.ai/protocol) — the coordination language behind AGLedger
 
 ## Install
 
