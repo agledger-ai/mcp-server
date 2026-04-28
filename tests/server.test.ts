@@ -44,7 +44,7 @@ describe('tool registration', () => {
     expect(tool!.description).toContain('nextSteps');
     expect(tool!.description).toContain('/v1/');
     expect(tool!.description).toContain('/v1/schemas');
-    expect(tool!.description).toContain('/v1/mandates');
+    expect(tool!.description).toContain('/v1/records');
   });
 
   it('registers agledger_verify', () => {
@@ -113,7 +113,7 @@ describe('agledger_discover', () => {
         }),
       )
       .mockResolvedValueOnce(
-        new Response(JSON.stringify({ agentId: 'agent-1', scopes: ['mandates:read'] }), {
+        new Response(JSON.stringify({ agentId: 'agent-1', scopes: ['records:read'] }), {
           status: 200,
           headers: { 'content-type': 'application/json' },
         }),
@@ -125,13 +125,13 @@ describe('agledger_discover', () => {
     expect(result.isError).toBeFalsy();
     const content = result.structuredContent as Record<string, unknown>;
     expect(content.health).toEqual({ status: 'ok', version: '1.0.0' });
-    expect(content.identity).toEqual({ agentId: 'agent-1', scopes: ['mandates:read'] });
+    expect(content.identity).toEqual({ agentId: 'agent-1', scopes: ['records:read'] });
 
     // Quickstart workflow is always present
     const quickstart = content.quickstart as { steps: Array<{ step: number; path: string }> };
     expect(quickstart.steps).toHaveLength(4);
     expect(quickstart.steps[0].path).toBe('/v1/schemas');
-    expect(quickstart.steps[2].path).toBe('/v1/mandates');
+    expect(quickstart.steps[2].path).toBe('/v1/records');
 
     // Docs hints always present — point at live API discovery and the openapi resource.
     const docs = content.docs as { openapi: string; openapiResource: string; description: string };
@@ -164,8 +164,8 @@ describe('agledger_discover', () => {
 describe('agledger_api', () => {
   it('passes through successful GET response', async () => {
     const apiResponse = {
-      data: [{ id: 'm-1', status: 'ACTIVE' }],
-      nextSteps: [{ action: 'Get mandate', method: 'GET', href: '/mandates/m-1' }],
+      data: [{ id: 'r-1', status: 'ACTIVE' }],
+      nextSteps: [{ action: 'Get record', method: 'GET', href: '/records/r-1' }],
     };
     vi.stubGlobal(
       'fetch',
@@ -179,7 +179,7 @@ describe('agledger_api', () => {
 
     const result = await harness.client.callTool({
       name: 'agledger_api',
-      arguments: { method: 'GET', path: '/mandates', params: { limit: 10 } },
+      arguments: { method: 'GET', path: '/records', params: { limit: 10 } },
     });
 
     expect(result.isError).toBeFalsy();
@@ -187,7 +187,7 @@ describe('agledger_api', () => {
   });
 
   it('passes through POST body', async () => {
-    const apiResponse = { id: 'm-2', status: 'CREATED' };
+    const apiResponse = { id: 'r-2', status: 'CREATED' };
     const mockFetch = vi.fn().mockResolvedValueOnce(
       new Response(JSON.stringify(apiResponse), {
         status: 201,
@@ -200,26 +200,26 @@ describe('agledger_api', () => {
       name: 'agledger_api',
       arguments: {
         method: 'POST',
-        path: '/mandates',
-        params: { contractType: 'ACH-PROC-v1', platform: 'test' },
+        path: '/records',
+        params: { type: 'ACH-PROC-v1', platform: 'test' },
       },
     });
 
     const [url, options] = mockFetch.mock.calls[0] as [string, RequestInit];
-    expect(url).toContain('/mandates');
+    expect(url).toContain('/records');
     expect(options.method).toBe('POST');
     expect(JSON.parse(options.body as string)).toEqual({
-      contractType: 'ACH-PROC-v1',
+      type: 'ACH-PROC-v1',
       platform: 'test',
     });
   });
 
   it('forwards full API error body', async () => {
     const errorBody = {
-      message: 'Mandate not found',
+      message: 'Record not found',
       code: 'NOT_FOUND',
       docUrl: 'https://www.agledger.ai/docs/errors/NOT_FOUND',
-      suggestion: 'Check the mandate ID and try again.',
+      suggestion: 'Check the record ID and try again.',
     };
     vi.stubGlobal(
       'fetch',
@@ -233,21 +233,21 @@ describe('agledger_api', () => {
 
     const result = await harness.client.callTool({
       name: 'agledger_api',
-      arguments: { method: 'GET', path: '/mandates/bad-id' },
+      arguments: { method: 'GET', path: '/records/bad-id' },
     });
 
     expect(result.isError).toBe(true);
     const content = result.structuredContent as Record<string, unknown>;
     expect(content.docUrl).toBe('https://www.agledger.ai/docs/errors/NOT_FOUND');
-    expect(content.suggestion).toBe('Check the mandate ID and try again.');
+    expect(content.suggestion).toBe('Check the record ID and try again.');
   });
 
   it('forwards 403 with missingScopes', async () => {
     const errorBody = {
       message: 'Insufficient permissions',
       code: 'FORBIDDEN',
-      missingScopes: ['mandates:write'],
-      suggestion: 'Request mandates:write scope on your API key.',
+      missingScopes: ['records:write'],
+      suggestion: 'Request records:write scope on your API key.',
     };
     vi.stubGlobal(
       'fetch',
@@ -261,18 +261,18 @@ describe('agledger_api', () => {
 
     const result = await harness.client.callTool({
       name: 'agledger_api',
-      arguments: { method: 'POST', path: '/mandates', params: {} },
+      arguments: { method: 'POST', path: '/records', params: {} },
     });
 
     expect(result.isError).toBe(true);
     const content = result.structuredContent as Record<string, unknown>;
-    expect(content.missingScopes).toEqual(['mandates:write']);
+    expect(content.missingScopes).toEqual(['records:write']);
   });
 
   it('rejects path not starting with / with recovery directive', async () => {
     const result = await harness.client.callTool({
       name: 'agledger_api',
-      arguments: { method: 'GET', path: 'mandates' },
+      arguments: { method: 'GET', path: 'records' },
     });
 
     expect(result.isError).toBe(true);
@@ -288,7 +288,7 @@ describe('agledger_api', () => {
     // Thin-passthrough contract: the API owns error guidance. The MCP must not
     // inject a suggestion or any other field the API didn't return.
     const errorBody = {
-      message: 'Invalid contract type',
+      message: 'Invalid Record type',
       code: 'BAD_REQUEST',
     };
     vi.stubGlobal(
@@ -303,7 +303,7 @@ describe('agledger_api', () => {
 
     const result = await harness.client.callTool({
       name: 'agledger_api',
-      arguments: { method: 'POST', path: '/v1/mandates', params: { contractType: 'INVALID' } },
+      arguments: { method: 'POST', path: '/v1/records', params: { type: 'INVALID' } },
     });
 
     expect(result.isError).toBe(true);
@@ -314,9 +314,9 @@ describe('agledger_api', () => {
 
   it('preserves existing API suggestion without overwriting', async () => {
     const errorBody = {
-      message: 'Mandate not found',
+      message: 'Record not found',
       code: 'NOT_FOUND',
-      suggestion: 'The mandate may have been deleted.',
+      suggestion: 'The record may have been deleted.',
     };
     vi.stubGlobal(
       'fetch',
@@ -330,12 +330,12 @@ describe('agledger_api', () => {
 
     const result = await harness.client.callTool({
       name: 'agledger_api',
-      arguments: { method: 'GET', path: '/v1/mandates/bad-id' },
+      arguments: { method: 'GET', path: '/v1/records/bad-id' },
     });
 
     expect(result.isError).toBe(true);
     const content = result.structuredContent as Record<string, unknown>;
-    expect(content.suggestion).toBe('The mandate may have been deleted.');
+    expect(content.suggestion).toBe('The record may have been deleted.');
   });
 
   it('handles network errors with recovery directive', async () => {
@@ -411,7 +411,7 @@ describe('agledger_api', () => {
       name: 'agledger_api',
       arguments: {
         method: 'GET',
-        path: '/mandates/search',
+        path: '/records/search',
         params: { status: 'ACTIVE', limit: 20 },
       },
     });

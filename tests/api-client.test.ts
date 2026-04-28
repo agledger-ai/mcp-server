@@ -66,12 +66,12 @@ describe('ApiClient', () => {
     vi.stubGlobal('fetch', mockFetch);
 
     const client = new ApiClient('https://api.test.com', 'key');
-    await client.request('POST', '/mandates', { body: { contractType: 'ACH-PROC-v1' } });
+    await client.request('POST', '/records', { body: { type: 'ACH-PROC-v1' } });
 
     const [, options] = mockFetch.mock.calls[0] as [string, RequestInit];
     const headers = options.headers as Record<string, string>;
     expect(headers['Content-Type']).toBe('application/json');
-    expect(JSON.parse(options.body as string)).toEqual({ contractType: 'ACH-PROC-v1' });
+    expect(JSON.parse(options.body as string)).toEqual({ type: 'ACH-PROC-v1' });
   });
 
   it('handles non-JSON responses', async () => {
@@ -121,7 +121,7 @@ describe('ApiClient', () => {
     );
 
     const client = new ApiClient('https://api.test.com', 'key');
-    const result = await client.request('POST', '/mandates', { body: {} });
+    const result = await client.request('POST', '/records', { body: {} });
 
     expect(result.ok).toBe(true);
     expect(result.status).toBe(201);
@@ -139,7 +139,7 @@ describe('ApiClient', () => {
     );
 
     const client = new ApiClient('https://api.test.com', 'key');
-    const result = await client.request('GET', '/mandates/bad');
+    const result = await client.request('GET', '/records/bad');
 
     expect(result.ok).toBe(false);
     expect(result.status).toBe(404);

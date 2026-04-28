@@ -5,7 +5,7 @@ import { AgledgerMcpServer } from '../src/server.js';
 
 const API_URL = process.env.AGLEDGER_API_URL ?? 'http://localhost:3001';
 const API_KEY =
-  process.env.AGLEDGER_API_KEY ?? 'ach_age_LduM4xPbgrQZjg_B-SK147ah2gskEN-8d-5xwG8ismM';
+  process.env.AGLEDGER_API_KEY ?? 'agl_agt_test';
 
 let client: Client;
 let cleanup: () => Promise<void>;
@@ -66,41 +66,41 @@ describe('agledger_discover (live)', () => {
   });
 });
 
-describe('enterprise key (live)', () => {
-  let entClient: Client;
-  let entCleanup: () => Promise<void>;
+describe('admin key (live)', () => {
+  let adminClient: Client;
+  let adminCleanup: () => Promise<void>;
 
   beforeAll(async () => {
     if (!apiReachable) return;
-    const entKey = 'ach_ent_sVPW_3Em_nZbX-il0akyT7MKHO5OZI2eKEcaIn6XCMY';
-    const server = new AgledgerMcpServer({ apiKey: entKey, apiUrl: API_URL });
+    const adminKey = process.env.AGLEDGER_ADMIN_API_KEY ?? 'agl_adm_test';
+    const server = new AgledgerMcpServer({ apiKey: adminKey, apiUrl: API_URL });
     const [ct, st] = InMemoryTransport.createLinkedPair();
-    entClient = new Client({ name: 'ent-test', version: '0.0.0-test' });
-    await Promise.all([server.mcp.connect(st), entClient.connect(ct)]);
-    entCleanup = async () => {
-      await entClient.close();
+    adminClient = new Client({ name: 'admin-test', version: '0.0.0-test' });
+    await Promise.all([server.mcp.connect(st), adminClient.connect(ct)]);
+    adminCleanup = async () => {
+      await adminClient.close();
       await server.mcp.close();
     };
   });
 
   afterAll(async () => {
-    if (entCleanup) await entCleanup();
+    if (adminCleanup) await adminCleanup();
   });
 
-  it('discover works with enterprise key', async () => {
+  it('discover works with admin key', async () => {
     if (skipIfNoApi()) return;
-    const result = await entClient.callTool({ name: 'agledger_discover', arguments: {} });
+    const result = await adminClient.callTool({ name: 'agledger_discover', arguments: {} });
     expect(result.isError).toBeFalsy();
     const content = result.structuredContent as Record<string, unknown>;
     const identity = content.identity as Record<string, unknown>;
-    expect(identity.role).toBe('enterprise');
+    expect(identity.role).toBe('admin');
   });
 
-  it('can list mandates with enterprise key', async () => {
+  it('can list records with admin key', async () => {
     if (skipIfNoApi()) return;
-    const result = await entClient.callTool({
+    const result = await adminClient.callTool({
       name: 'agledger_api',
-      arguments: { method: 'GET', path: '/v1/mandates', params: { limit: 1 } },
+      arguments: { method: 'GET', path: '/v1/records', params: { limit: 1 } },
     });
     expect(result.isError).toBeFalsy();
     const content = result.structuredContent as Record<string, unknown>;
@@ -136,7 +136,7 @@ describe('agledger_api (live)', () => {
     expect(content.ownerId).toBeDefined();
   });
 
-  it('GET /v1/schemas lists contract types', async () => {
+  it('GET /v1/schemas lists Record types', async () => {
     if (skipIfNoApi()) return;
 
     const result = await client.callTool({
@@ -150,12 +150,12 @@ describe('agledger_api (live)', () => {
     expect(Array.isArray(content.data)).toBe(true);
   });
 
-  it('GET /v1/mandates lists mandates', async () => {
+  it('GET /v1/records lists records', async () => {
     if (skipIfNoApi()) return;
 
     const result = await client.callTool({
       name: 'agledger_api',
-      arguments: { method: 'GET', path: '/v1/mandates', params: { limit: 5 } },
+      arguments: { method: 'GET', path: '/v1/records', params: { limit: 5 } },
     });
 
     expect(result.isError).toBeFalsy();
@@ -163,16 +163,16 @@ describe('agledger_api (live)', () => {
     expect(content.data).toBeDefined();
   });
 
-  it('POST /v1/mandates/agent creates a mandate', async () => {
+  it('POST /v1/records creates a record', async () => {
     if (skipIfNoApi()) return;
 
     const result = await client.callTool({
       name: 'agledger_api',
       arguments: {
         method: 'POST',
-        path: '/v1/mandates/agent',
+        path: '/v1/records',
         params: {
-          contractType: 'ACH-PROC-v1',
+          type: 'ACH-PROC-v1',
           platform: 'mcp-integration-test',
           criteria: {
             item_spec: 'integration-test-resource',
@@ -184,15 +184,15 @@ describe('agledger_api (live)', () => {
     expect(result.isError).toBeFalsy();
     const content = result.structuredContent as Record<string, unknown>;
     expect(content.id).toBeDefined();
-    expect(content.contractType).toBe('ACH-PROC-v1');
+    expect(content.type).toBe('ACH-PROC-v1');
   });
 
-  it('returns structured error for not-found mandate', async () => {
+  it('returns structured error for not-found record', async () => {
     if (skipIfNoApi()) return;
 
     const result = await client.callTool({
       name: 'agledger_api',
-      arguments: { method: 'GET', path: '/v1/mandates/nonexistent-id' },
+      arguments: { method: 'GET', path: '/v1/records/nonexistent-id' },
     });
 
     expect(result.isError).toBe(true);
@@ -207,9 +207,9 @@ describe('agledger_api (live)', () => {
       name: 'agledger_api',
       arguments: {
         method: 'POST',
-        path: '/v1/mandates/agent',
+        path: '/v1/records',
         params: {
-          contractType: 'ACH-PROC-v1',
+          type: 'ACH-PROC-v1',
           platform: 'test',
           criteria: { bad_field: 'wrong' },
         },
@@ -223,19 +223,19 @@ describe('agledger_api (live)', () => {
   });
 });
 
-describe('full mandate lifecycle (live)', () => {
-  let mandateId: string;
+describe('full record lifecycle (live)', () => {
+  let recordId: string;
 
-  it('step 1: create mandate with autoActivate', async () => {
+  it('step 1: create record with autoActivate', async () => {
     if (skipIfNoApi()) return;
 
     const result = await client.callTool({
       name: 'agledger_api',
       arguments: {
         method: 'POST',
-        path: '/v1/mandates/agent',
+        path: '/v1/records',
         params: {
-          contractType: 'ACH-PROC-v1',
+          type: 'ACH-PROC-v1',
           platform: 'mcp-lifecycle-test',
           autoActivate: true,
           criteria: {
@@ -247,33 +247,33 @@ describe('full mandate lifecycle (live)', () => {
 
     expect(result.isError).toBeFalsy();
     const content = result.structuredContent as Record<string, unknown>;
-    mandateId = content.id as string;
-    expect(mandateId).toBeDefined();
+    recordId = content.id as string;
+    expect(recordId).toBeDefined();
     expect(content.status).toBe('ACTIVE');
   });
 
-  it('step 2: get mandate to confirm state', async () => {
-    if (skipIfNoApi() || !mandateId) return;
+  it('step 2: get record to confirm state', async () => {
+    if (skipIfNoApi() || !recordId) return;
 
     const result = await client.callTool({
       name: 'agledger_api',
-      arguments: { method: 'GET', path: `/v1/mandates/${mandateId}` },
+      arguments: { method: 'GET', path: `/v1/records/${recordId}` },
     });
 
     expect(result.isError).toBeFalsy();
     const content = result.structuredContent as Record<string, unknown>;
-    expect(content.id).toBe(mandateId);
+    expect(content.id).toBe(recordId);
     expect(content.status).toBe('ACTIVE');
   });
 
   it('step 3: submit receipt', async () => {
-    if (skipIfNoApi() || !mandateId) return;
+    if (skipIfNoApi() || !recordId) return;
 
     const result = await client.callTool({
       name: 'agledger_api',
       arguments: {
         method: 'POST',
-        path: `/v1/mandates/${mandateId}/receipts`,
+        path: `/v1/records/${recordId}/receipts`,
         params: {
           evidence: {
             item_secured: 'Lifecycle test widget delivered',
@@ -289,15 +289,15 @@ describe('full mandate lifecycle (live)', () => {
     expect(result.isError).toBeFalsy();
     const content = result.structuredContent as Record<string, unknown>;
     expect(content.id).toBeDefined();
-    expect(content.mandateId).toBe(mandateId);
+    expect(content.recordId).toBe(recordId);
   });
 
-  it('step 4: check mandate reached terminal state', async () => {
-    if (skipIfNoApi() || !mandateId) return;
+  it('step 4: check record reached terminal state', async () => {
+    if (skipIfNoApi() || !recordId) return;
 
     const result = await client.callTool({
       name: 'agledger_api',
-      arguments: { method: 'GET', path: `/v1/mandates/${mandateId}` },
+      arguments: { method: 'GET', path: `/v1/records/${recordId}` },
     });
 
     expect(result.isError).toBeFalsy();
@@ -306,30 +306,30 @@ describe('full mandate lifecycle (live)', () => {
     expect(['FULFILLED', 'VERIFIED_FAIL', 'PROCESSING']).toContain(status);
   });
 
-  it('step 5: list receipts for mandate', async () => {
-    if (skipIfNoApi() || !mandateId) return;
+  it('step 5: list receipts for record', async () => {
+    if (skipIfNoApi() || !recordId) return;
 
     const result = await client.callTool({
       name: 'agledger_api',
-      arguments: { method: 'GET', path: `/v1/mandates/${mandateId}/receipts` },
+      arguments: { method: 'GET', path: `/v1/records/${recordId}/receipts` },
     });
 
     expect(result.isError).toBeFalsy();
     const content = result.structuredContent as Record<string, unknown>;
     const data = content.data as Array<Record<string, unknown>>;
     expect(data.length).toBeGreaterThanOrEqual(1);
-    expect(data[0].mandateId).toBe(mandateId);
+    expect(data[0].recordId).toBe(recordId);
   });
 
-  it('step 6: check events for mandate', async () => {
-    if (skipIfNoApi() || !mandateId) return;
+  it('step 6: check events for record', async () => {
+    if (skipIfNoApi() || !recordId) return;
 
     const result = await client.callTool({
       name: 'agledger_api',
       arguments: {
         method: 'GET',
         path: '/v1/events',
-        params: { mandateId, limit: 10, since: '2020-01-01T00:00:00Z' },
+        params: { recordId, limit: 10, since: '2020-01-01T00:00:00Z' },
       },
     });
 
@@ -354,14 +354,14 @@ describe('HTTP method coverage (live)', () => {
     expect(content.error ?? content.message).toBeDefined();
   });
 
-  it('PATCH returns structured error for invalid mandate update', async () => {
+  it('PATCH returns structured error for invalid record update', async () => {
     if (skipIfNoApi()) return;
 
     const result = await client.callTool({
       name: 'agledger_api',
       arguments: {
         method: 'PATCH',
-        path: '/v1/mandates/nonexistent-id',
+        path: '/v1/records/nonexistent-id',
         params: { platform: 'updated' },
       },
     });

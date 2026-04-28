@@ -31,11 +31,11 @@ export interface AuditExportEntry {
   };
 }
 
-export interface MandateAuditExport {
+export interface RecordAuditExport {
   exportMetadata: {
-    mandateId: string;
+    recordId: string;
     enterpriseId: string | null;
-    contractType: string;
+    type: string;
     exportDate: string;
     totalEntries: number;
     chainIntegrity: boolean;
@@ -73,7 +73,7 @@ export interface VerifyExportResult {
     detail?: string;
   };
   entries: EntryVerificationResult[];
-  mandateId: string;
+  recordId: string;
 }
 
 export interface VerifyExportOptions {
@@ -86,7 +86,7 @@ const SUPPORTED_HASH = new Set(['SHA-256', 'sha-256', 'sha256']);
 const SUPPORTED_SIG = new Set(['Ed25519', 'ed25519']);
 
 export function verifyExport(
-  exportData: MandateAuditExport,
+  exportData: RecordAuditExport,
   options: VerifyExportOptions = {},
 ): VerifyExportResult {
   const meta = exportData.exportMetadata;
@@ -110,7 +110,7 @@ export function verifyExport(
       verifiedEntries: 0,
       brokenAt: { position: 0, reason: 'unsupported_algorithm', detail },
       entries: [result],
-      mandateId: meta.mandateId,
+      recordId: meta.recordId,
     };
   }
 
@@ -133,12 +133,12 @@ export function verifyExport(
     verifiedEntries,
     brokenAt,
     entries: entryResults,
-    mandateId: meta.mandateId,
+    recordId: meta.recordId,
   };
 }
 
 function resolveKeys(
-  exportData: MandateAuditExport,
+  exportData: RecordAuditExport,
   options: VerifyExportOptions,
 ): Record<string, string> {
   const meta = exportData.exportMetadata;

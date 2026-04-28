@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { verifyExport, type MandateAuditExport } from './verify/verify-export.js';
+import { verifyExport, type RecordAuditExport } from './verify/verify-export.js';
 import { ApiClient } from './api-client.js';
 
 export interface AgledgerMcpServerOptions {
@@ -14,10 +14,10 @@ export interface AgledgerMcpServerOptions {
 const QUICKSTART = {
   description: 'To track accountability for your work, follow these steps in order:',
   steps: [
-    { step: 1, action: 'List available contract types', method: 'GET', path: '/v1/schemas' },
-    { step: 2, action: 'Get schema for your contract type', method: 'GET', path: '/v1/schemas/{contractType}' },
-    { step: 3, action: 'Create a mandate', method: 'POST', path: '/v1/mandates' },
-    { step: 4, action: 'Do your work, then submit a receipt', method: 'POST', path: '/v1/mandates/{id}/receipts' },
+    { step: 1, action: 'List available Record types', method: 'GET', path: '/v1/schemas' },
+    { step: 2, action: 'Get schema for your Record type', method: 'GET', path: '/v1/schemas/{type}' },
+    { step: 3, action: 'Create a record', method: 'POST', path: '/v1/records' },
+    { step: 4, action: 'Do your work, then submit a receipt', method: 'POST', path: '/v1/records/{id}/receipts' },
   ],
 } as const;
 
@@ -55,7 +55,7 @@ export class AgledgerMcpServer {
     this.client = new ApiClient(apiUrl, options.apiKey, options.timeoutMs);
 
     this.mcp = new McpServer(
-      { name: 'agledger-mcp-server', version: '2.2.0' },
+      { name: 'agledger-mcp-server', version: '2.3.0' },
       { capabilities: { tools: {}, resources: {} } },
     );
 
@@ -131,10 +131,10 @@ export class AgledgerMcpServer {
         description:
           'Make any AGLedger API call. All paths start with /v1/. ' +
           'The API returns nextSteps on every response — follow them. Workflow: ' +
-          '1. GET /v1/schemas — list contract types. ' +
+          '1. GET /v1/schemas — list Record types. ' +
           '2. GET /v1/schemas/{type} — get required fields and examples. ' +
-          '3. POST /v1/mandates — create a mandate. ' +
-          '4. POST /v1/mandates/{id}/receipts — submit evidence when done. ' +
+          '3. POST /v1/records — create a record. ' +
+          '4. POST /v1/records/{id}/receipts — submit evidence when done. ' +
           'If a call fails, read the suggestion field in the error response. ' +
           'For the full API catalog, GET /openapi.json (or read the agledger://openapi resource). ' +
           'For GET/DELETE, params become query parameters. For POST/PUT/PATCH, params become the JSON body.',
@@ -142,7 +142,7 @@ export class AgledgerMcpServer {
           method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).describe('HTTP method'),
           path: z
             .string()
-            .describe('API path starting with / (e.g. /v1/mandates, /v1/schemas, /v1/mandates/{id}/receipts)'),
+            .describe('API path starting with / (e.g. /v1/records, /v1/schemas, /v1/records/{id}/receipts)'),
           params: z
             .record(z.string(), z.unknown())
             .optional()
@@ -164,9 +164,9 @@ export class AgledgerMcpServer {
           if (!path.startsWith('/')) {
             return errorResult(
               'Path must start with /. All API routes use /v1/ prefix. ' +
-                'Example: /v1/mandates, /v1/schemas. Call agledger_discover for the full workflow.',
+                'Example: /v1/records, /v1/schemas. Call agledger_discover for the full workflow.',
               'PATH_INVALID',
-              'Prefix the path with /v1/ (e.g. /v1/mandates). Call agledger_discover if unsure which path to use.',
+              'Prefix the path with /v1/ (e.g. /v1/records). Call agledger_discover if unsure which path to use.',
             );
           }
 
@@ -232,12 +232,12 @@ export class AgledgerMcpServer {
           'the publicKeys override). On failure, brokenAt pinpoints the first entry that failed ' +
           'and why (payload_hash_mismatch, chain_break, signature_invalid, unknown_key, ' +
           'position_gap, malformed_entry, unsupported_algorithm). ' +
-          'Obtain the export via agledger_api with method=GET, path=/v1/mandates/{id}/audit-export.',
+          'Obtain the export via agledger_api with method=GET, path=/v1/records/{id}/audit-export.',
         inputSchema: {
           export: z
             .record(z.string(), z.unknown())
             .describe(
-              'The parsed audit export JSON (the response body from GET /v1/mandates/{id}/audit-export).',
+              'The parsed audit export JSON (the response body from GET /v1/records/{id}/audit-export).',
             ),
           publicKeys: z
             .record(z.string(), z.string())
@@ -268,11 +268,11 @@ export class AgledgerMcpServer {
             return errorResult(
               'Input is not a valid audit export. Expected an object with exportMetadata and entries.',
               'INVALID_EXPORT',
-              'Call agledger_api with method=GET and path=/v1/mandates/{id}/audit-export, then pass the response body as the `export` argument.',
+              'Call agledger_api with method=GET and path=/v1/records/{id}/audit-export, then pass the response body as the `export` argument.',
             );
           }
 
-          const result = verifyExport(exportData as unknown as MandateAuditExport, {
+          const result = verifyExport(exportData as unknown as RecordAuditExport, {
             publicKeys,
             requireKeyId,
           });

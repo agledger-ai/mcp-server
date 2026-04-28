@@ -7,8 +7,8 @@ Connects any MCP-compatible AI agent (Claude, Cursor, Windsurf, etc.) to the AGL
 **Learn more**
 
 - [agledger.ai](https://agledger.ai) — what AGLedger is and why Layer 3 accountability matters
-- [How it works](https://agledger.ai/how-it-works) — the four-endpoint lifecycle: mandate, receipt, verdict, fulfill
-- [Glossary](https://agledger.ai/glossary) — canonical definitions of Mandate, Receipt, Verdict, Settlement Signal
+- [How it works](https://agledger.ai/how-it-works) — the four-endpoint lifecycle: record, receipt, verdict, fulfill
+- [Glossary](https://agledger.ai/glossary) — canonical definitions of Record, Receipt, Verdict, Settlement Signal
 - [MCP Server guide](https://agledger.ai/docs/guides/mcp-server) — installation and agent workflow
 - [Protocol (AOAP)](https://agledger.ai/protocol) — the coordination language behind AGLedger
 
@@ -45,16 +45,16 @@ agledger-mcp --api-key <key> [--api-url <url>]
 |------|-------------|
 | `agledger_discover` | Returns API health, your identity, available scopes, and a quickstart workflow. Call this first. |
 | `agledger_api` | Make any AGLedger API call (method, path, params). The API returns `nextSteps` on every response for self-guided workflow discovery. |
-| `agledger_verify` | Verify a mandate audit export offline (RFC 8785 hash chain + Ed25519 signatures). No network calls. Returns `valid`, `verifiedEntries`, and a `brokenAt` pointer on failure. |
+| `agledger_verify` | Verify a record audit export offline (RFC 8785 hash chain + Ed25519 signatures). No network calls. Returns `valid`, `verifiedEntries`, and a `brokenAt` pointer on failure. |
 
 ### Agent workflow
 
 The `agledger_discover` tool returns a quickstart workflow that guides agents through the accountability flow:
 
-1. `GET /v1/schemas` -- list available contract types
+1. `GET /v1/schemas` -- list available Record types
 2. `GET /v1/schemas/{type}` -- get required fields and examples
-3. `POST /v1/mandates` -- create a mandate
-4. `POST /v1/mandates/{id}/receipts` -- submit evidence when done
+3. `POST /v1/records` -- create a record
+4. `POST /v1/records/{id}/receipts` -- submit evidence when done
 
 Every API error response includes a `suggestion` field with actionable recovery guidance -- agents can self-correct without human intervention.
 
@@ -69,10 +69,10 @@ Every API error response includes a `suggestion` field with actionable recovery 
 
 AGLedger is the accountability layer for automated operations. It records what was agreed to, by whom, when -- and tracks the delegation of that agreement through other systems.
 
-- **Mandates** -- structured commitments with acceptance criteria and tolerance bands
+- **Records** -- structured commitments with acceptance criteria and tolerance bands
 - **Receipts** -- task attestations recording what was reported to be done
 - **Verdicts** -- principal acceptance decisions (PASS/FAIL) with settlement signals
-- **Audit trail** -- hash-chained, Ed25519-signed, tamper-evident record
+- **Audit trail** -- hash-chained, Ed25519-signed, tamper-evident chain
 
 Learn more at [agledger.ai](https://www.agledger.ai) | [API docs](https://www.agledger.ai/docs/)
 

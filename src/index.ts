@@ -25,7 +25,7 @@ function main(): void {
 
   if (values.help) {
     process.stderr.write(
-      `AGLedger MCP Server v2.2.0
+      `AGLedger MCP Server v2.3.0
 
 Usage: agledger-mcp --api-key <key> [--api-url <url>]
 
