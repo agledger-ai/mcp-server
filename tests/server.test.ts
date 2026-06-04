@@ -430,6 +430,23 @@ describe('agledger_api', () => {
     expect(text).toContain('control characters');
   });
 
+  it('rejects a protocol-relative path (// — would resolve off-origin and leak the API key)', async () => {
+    const mockFetch = vi.fn();
+    vi.stubGlobal('fetch', mockFetch);
+
+    const result = await harness.client.callTool({
+      name: 'agledger_api',
+      arguments: { method: 'GET', path: '//evil.com/x' },
+    });
+
+    expect(result.isError).toBe(true);
+    const content = result.structuredContent as Record<string, unknown>;
+    expect(content.code).toBe('PATH_INVALID');
+    expect(content.message).toContain('//');
+    // No request must be made off-origin.
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
   it('forwards API error body verbatim when suggestion is missing (no MCP-side enrichment)', async () => {
     // Thin-passthrough contract: the API owns error guidance. The MCP must not
     // inject a suggestion or any other field the API didn't return.

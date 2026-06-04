@@ -188,6 +188,12 @@ export class AgledgerMcpServer {
           idempotentHint: true,
           openWorldHint: true,
         },
+        // SEP-1880 tool-level scopes (early adoption). This tool calls /health
+        // (public), /v1/scope-profiles (public, security:[]), and /v1/auth/me
+        // (authenticated but no scope gate by design — any valid key may
+        // introspect its own context). No NAMED scope is required, so the list
+        // is empty: a valid API key suffices, but no specific scope gates it.
+        _meta: { requiredScopes: [] as string[] },
       },
       async () => {
         try {
@@ -267,6 +273,14 @@ export class AgledgerMcpServer {
           idempotentHint: false,
           openWorldHint: true,
         },
+        // SEP-1880 _meta.requiredScopes is deliberately OMITTED for this tool.
+        // agledger_api is the universal dispatcher — it forwards arbitrary
+        // method+path to every route, each with its own scope requirement
+        // (records:read, records:write, etc.). The required scope is route-
+        // dependent and enforced server-side per request; it cannot be
+        // statically declared for the dispatcher as a whole. Fabricating a
+        // single scope here would be dishonest. Callers see the real missing
+        // scopes in the API's 403 response (missingScopes), forwarded verbatim.
       },
       async (args) => {
         try {
@@ -278,6 +292,19 @@ export class AgledgerMcpServer {
                 'Example: /v1/records, /v1/schemas. Call agledger_discover for the full workflow.',
               'PATH_INVALID',
               'Prefix the path with /v1/ (e.g. /v1/records). Call agledger_discover if unsure which path to use.',
+            );
+          }
+
+          // Reject protocol-relative paths. `//evil.com/x` passes the
+          // startsWith('/') check but `new URL(path, apiUrl)` resolves it to a
+          // DIFFERENT origin (https://evil.com/x), which would send the
+          // `Authorization: Bearer <apiKey>` header off-origin (key exfiltration).
+          // A legitimate API path is a single-slash absolute path on this origin.
+          if (path.startsWith('//')) {
+            return errorResult(
+              'Path must not start with //',
+              'PATH_INVALID',
+              'Use a single-slash absolute path on this API (e.g. /v1/records). A // prefix resolves to a different host.',
             );
           }
 
@@ -400,6 +427,10 @@ export class AgledgerMcpServer {
           idempotentHint: true,
           openWorldHint: false,
         },
+        // SEP-1880 tool-level scopes (early adoption). This tool verifies an
+        // audit export entirely offline (no network, no API key) — no scope is
+        // required to invoke it.
+        _meta: { requiredScopes: [] as string[] },
       },
       async (args) => {
         try {
