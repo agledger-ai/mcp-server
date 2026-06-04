@@ -4,6 +4,16 @@ All notable changes to the AGLedger MCP Server will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.4.11] - 2026-06-04
+
+### Security
+
+- Hardened `agledger_api` and `ApiClient` against off-origin paths (prevents API-key exfiltration). A protocol-relative path like `//evil.com/x` passed the `startsWith('/')` guard, and `new URL(path, apiUrl)` resolved it to a different origin (`https://evil.com/x`) — sending the `Authorization: Bearer <apiKey>` header off-host. Two layers now block this: `agledger_api` rejects a `path` starting with `//` (returns a `PATH_INVALID` error result), and `ApiClient.request` pins every request to the configured API origin, throwing if the resolved URL's origin differs. No caller can be steered off-origin.
+
+### Changed
+
+- SEP-1880 tool-level scopes (early adoption): `_meta.requiredScopes` added where it can be declared honestly. `agledger_verify` → `[]` (offline, no network, no key). `agledger_discover` → `[]` (calls `/health` + `/v1/scope-profiles`, both public, and `/v1/auth/me`, which is authenticated but scope-free by design — no NAMED scope gates it). `agledger_api` deliberately OMITS `_meta` (with an inline comment): it is the universal dispatcher to every route, each with its own server-enforced scope, so no single scope can be statically declared for it.
+
 ## [2.4.10] - 2026-06-04
 
 No functional change. First release published from CI with **build provenance** via npm trusted publishing (OIDC) — npm attaches a Sigstore provenance attestation automatically; verify with `npm audit signatures`. A CycloneDX SBOM is attached to the release. This package now lives in its own source-of-truth repo `agledger-ai/mcp-server` and resolves `@agledger/verify-core@0.1.4`.

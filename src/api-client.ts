@@ -27,6 +27,17 @@ export class ApiClient {
   ): Promise<ApiResponse> {
     const url = new URL(path, this.apiUrl);
 
+    // Defense-in-depth: pin every request to the configured API origin. A
+    // protocol-relative or absolute `path` (e.g. `//evil.com/x`,
+    // `https://evil.com`) resolves against the base to a different origin, which
+    // would leak the `Authorization: Bearer <apiKey>` header off-host. No caller
+    // may steer the client off-origin.
+    if (url.origin !== new URL(this.apiUrl).origin) {
+      throw new Error(
+        `Refusing to send request off-origin: path "${path}" resolves to ${url.origin}, expected ${new URL(this.apiUrl).origin}.`,
+      );
+    }
+
     if (options?.query) {
       for (const [k, v] of Object.entries(options.query)) {
         if (v !== undefined && v !== null) {

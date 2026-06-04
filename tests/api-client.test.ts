@@ -127,6 +127,28 @@ describe('ApiClient', () => {
     expect(result.status).toBe(201);
   });
 
+  it('refuses a protocol-relative path that would resolve off-origin', async () => {
+    const mockFetch = vi.fn();
+    vi.stubGlobal('fetch', mockFetch);
+
+    const client = new ApiClient('https://api.test.com', 'my-secret-key');
+
+    // `//evil.com/x` resolves to https://evil.com/x via new URL(path, base).
+    // The client must throw rather than send the Bearer token off-origin.
+    await expect(client.request('GET', '//evil.com/x')).rejects.toThrow(/off-origin/i);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('refuses an absolute URL path on a different host', async () => {
+    const mockFetch = vi.fn();
+    vi.stubGlobal('fetch', mockFetch);
+
+    const client = new ApiClient('https://api.test.com', 'my-secret-key');
+
+    await expect(client.request('GET', 'https://evil.com/steal')).rejects.toThrow(/off-origin/i);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
   it('sets ok=false for 4xx/5xx responses', async () => {
     vi.stubGlobal(
       'fetch',
