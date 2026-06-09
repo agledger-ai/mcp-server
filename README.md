@@ -10,7 +10,6 @@ Connects any MCP-compatible AI agent (Claude, Cursor, Windsurf, etc.) to the AGL
 - [How it works](https://agledger.ai/how-it-works) — the four-endpoint lifecycle: record, completion, verdict, fulfill
 - [Glossary](https://agledger.ai/glossary) — canonical definitions of Record, Completion, SCITT Receipt, Verdict, Settlement Signal
 - [MCP Server guide](https://agledger.ai/docs/guides/mcp-server) — installation and agent workflow
-- [Protocol (AOAP)](https://agledger.ai/protocol) — the coordination language behind AGLedger
 
 ## Install
 
@@ -87,4 +86,4 @@ Each self-hosted AGLedger instance also serves interactive Swagger UI at `{AGLED
 
 Proprietary. See [LICENSE](./LICENSE).
 
-AGLedger, Agentic Ledger, Settlement Signal, and Agentic Operations and Accountability Protocol (AOAP) are trademarks of AGLedger LLC. Patent pending.
+AGLedger is a trademark of AGLedger LLC, and Settlement Signal is a pending trademark of AGLedger LLC. All other trademarks are the property of their respective owners. Patent pending.
