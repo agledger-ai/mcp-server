@@ -4,6 +4,13 @@ All notable changes to the AGLedger MCP Server will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.5.1] - 2026-06-10
+
+### Changed
+
+- **License re-sync.** `LICENSE` is now a verbatim copy of the canonical AGLedger SDK license template **v1.5**: §7 trademarks trimmed to **AGLedger + Settlement Signal (pending)** (removed the retired "Agentic Ledger" / AOAP claims), §6 export language modernized to ENC §740.17(b)(1) mass-market self-classification, and §1 carries the no-inspection / no-training / no-usage-data representation. README: dropped the retired AOAP protocol link and trimmed the trademark footer to match LICENSE §7.
+- No code changes; republished so the distributed tarball carries the corrected license text.
+
 ## [2.5.0] - 2026-06-08
 
 Release marking the AGLedger API **v1.0.0 GA**. The MCP server is a thin pass-through over the API, so the tool surface is unchanged from 2.4.x; this is the GA-aligned cut alongside the SDK/CLI 1.0.0 release wave.
