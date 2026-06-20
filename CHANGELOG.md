@@ -4,6 +4,18 @@ All notable changes to the AGLedger MCP Server will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.5.3] - 2026-06-20
+
+### Changed
+
+- Bumped `@agledger/verify-core` to `^1.0.0` (now GA at 1.0.0 alongside the API and the published package line). No tool-surface or behavior changes — the `agledger_verify` offline-verification logic is unchanged.
+
+## [2.5.2] - 2026-06-18
+
+### Fixed
+
+- **CodeQL `js/polynomial-redos`.** Replaced a regex-based trailing-slash strip with a linear scan, removing the polynomial-backtracking vector flagged by CodeQL. No tool-surface or behavior change.
+
 ## [2.5.1] - 2026-06-10
 
 ### Changed
