@@ -6,13 +6,21 @@ export interface ApiResponse {
   ok: boolean;
 }
 
+// Strip trailing slashes with a single linear scan. A regex like /\/+$/ is
+// O(n^2) on inputs of many slashes (CodeQL js/polynomial-redos); this is O(n).
+function stripTrailingSlashes(s: string): string {
+  let end = s.length;
+  while (end > 0 && s.charCodeAt(end - 1) === 47 /* '/' */) end--;
+  return s.slice(0, end);
+}
+
 export class ApiClient {
   private readonly apiUrl: string;
   private readonly apiKey: string;
   private readonly timeoutMs: number;
 
   constructor(apiUrl: string, apiKey: string, timeoutMs = 30_000) {
-    this.apiUrl = apiUrl.replace(/\/+$/, '');
+    this.apiUrl = stripTrailingSlashes(apiUrl);
     this.apiKey = apiKey;
     this.timeoutMs = timeoutMs;
   }
