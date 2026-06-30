@@ -4,6 +4,12 @@ All notable changes to the AGLedger MCP Server will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.5.4] - 2026-06-29
+
+### Changed
+
+- Docs only: removed em-dashes from the README prose and the package.json description (cross-repo #98 writing-style sweep). Rewrote each sentence rather than swapping the glyph. No tool-surface or behavior change.
+
 ## [2.5.3] - 2026-06-20
 
 ### Changed

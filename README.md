@@ -6,10 +6,10 @@ Connects any MCP-compatible AI agent (Claude, Cursor, Windsurf, etc.) to the AGL
 
 **Learn more**
 
-- [agledger.ai](https://agledger.ai) — what AGLedger is and why Layer 3 accountability matters
-- [How it works](https://agledger.ai/how-it-works) — the four-endpoint lifecycle: record, completion, verdict, fulfill
-- [Glossary](https://agledger.ai/glossary) — canonical definitions of Record, Completion, SCITT Receipt, Verdict, Settlement Signal
-- [MCP Server guide](https://agledger.ai/docs/guides/mcp-server) — installation and agent workflow
+- [agledger.ai](https://agledger.ai): what AGLedger is and why Layer 3 accountability matters
+- [How it works](https://agledger.ai/how-it-works) walks the four-endpoint lifecycle: record, completion, verdict, fulfill
+- [Glossary](https://agledger.ai/glossary): canonical definitions of Record, Completion, SCITT Receipt, Verdict, Settlement Signal
+- [MCP Server guide](https://agledger.ai/docs/guides/mcp-server): installation and agent workflow
 
 ## Install
 
