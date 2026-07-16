@@ -1,13 +1,13 @@
 # @agledger/mcp-server
 
-The official [MCP](https://modelcontextprotocol.io) server for the [AGLedger](https://agledger.ai) API: accountability infrastructure for AI agents. The Layer 3 accountability layer of the agent stack.
+The official [MCP](https://modelcontextprotocol.io) server for the [AGLedger](https://agledger.ai) API: change control for AI agents. A self-hosted notary that records every change an agent makes, signed and hash-chained, and gates the ones that matter.
 
 Connects any MCP-compatible AI agent (Claude, Cursor, Windsurf, etc.) to the AGLedger API with 2 universal API-pass-through tools plus an offline audit verifier. No SDK code required. Just point your agent at this server.
 
 **Learn more**
 
-- [agledger.ai](https://agledger.ai): what AGLedger is and why Layer 3 accountability matters
-- [How it works](https://agledger.ai/how-it-works) walks the four-endpoint lifecycle: record, completion, verdict, fulfill
+- [agledger.ai](https://agledger.ai): what AGLedger is and who needs it
+- [How it works](https://agledger.ai/how-it-works) walks the lifecycle: record, completion, verdict
 - [Glossary](https://agledger.ai/glossary): canonical definitions of Record, Completion, SCITT Receipt, Verdict, Settlement Signal
 - [MCP Server guide](https://agledger.ai/docs/guides/mcp-server): installation and agent workflow
 
@@ -66,10 +66,10 @@ Every API error response includes a `suggestion` field with actionable recovery 
 
 ## What is AGLedger?
 
-AGLedger is the accountability layer for automated operations. It records what was agreed to, by whom, when -- and tracks the delegation of that agreement through other systems.
+AGLedger is the accountability layer for automated operations. It notarizes what was agreed to, by whom, and when, and tracks the delegation of that agreement through other systems.
 
 - **Records** -- structured commitments with acceptance criteria and tolerance bands
-- **Completions** -- performer evidence recording what was reported to be done (renamed from Receipts in 0.8.0 / SDK 0.8.0 to align with SCITT vocabulary)
+- **Completions** -- performer evidence recording what was reported to be done
 - **Verdicts** -- principal accept/reject decisions on a Completion (the Gate), with settlement signals
 - **Audit chain** -- notarized records as COSE_Sign1 envelopes, hash-chained, Ed25519-signed, tamper-evident, verifiable offline
 

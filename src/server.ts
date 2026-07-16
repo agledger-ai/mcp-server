@@ -19,7 +19,7 @@ export interface AgledgerMcpServerOptions {
 }
 
 const QUICKSTART = {
-  description: 'To track accountability for your work, follow these steps in order:',
+  description: 'To notarize your work, follow these steps in order:',
   steps: [
     { step: 1, action: 'List available Record types', method: 'GET', path: '/v1/schemas' },
     { step: 2, action: 'Get schema for your Record type', method: 'GET', path: '/v1/schemas/{type}' },
@@ -101,8 +101,8 @@ function parseJsonObject(
 
 /**
  * Parse a JSON-encoded object OR array. Used for fields that legitimately
- * accept either shape (e.g. `agledger_verify.publicKeys` — see verify-core
- * `OutOfBandKeyEntry[]` polymorphism, agledger-agents#77 / F-698). Strings,
+ * accept either shape (e.g. `agledger_verify.publicKeys`, which accepts verify-core
+ * `OutOfBandKeyEntry[]` polymorphism). Strings,
  * numbers, booleans, and null still fail loudly.
  */
 function parseJsonObjectOrArray(
@@ -244,11 +244,11 @@ export class AgledgerMcpServer {
         title: 'AGLedger API',
         description:
           'Make any AGLedger API call. All paths start with /v1/. ' +
-          'The API returns nextSteps on every response — follow them. Workflow: ' +
-          '1. GET /v1/schemas — list Record types. ' +
-          '2. GET /v1/schemas/{type} — get required fields and examples. ' +
-          '3. POST /v1/records — create a record. ' +
-          '4. POST /v1/records/{id}/completions — submit evidence when done. ' +
+          'The API returns nextSteps on every response: follow them. Workflow: ' +
+          '1. GET /v1/schemas, list Record types. ' +
+          '2. GET /v1/schemas/{type}, get required fields and examples. ' +
+          '3. POST /v1/records, create a record. ' +
+          '4. POST /v1/records/{id}/completions, submit evidence when done. ' +
           'If a call fails, read the suggestion field in the error response. ' +
           'For the full API catalog, GET /openapi.json (or read the agledger://openapi resource). ' +
           'For GET/DELETE, params become query parameters. For POST/PUT/PATCH, params become the JSON body.',
@@ -401,7 +401,7 @@ export class AgledgerMcpServer {
                 'string (or a native object/array): a compact map ' +
                 '\'{"key-1":"MCowBQYDK2VwAyEA..."}\', the list shape ' +
                 '\'[{"keyId":"key-1","publicKey":"MCowBQYDK2VwAyEA..."}]\', or the raw ' +
-                'GET /v1/verification-keys response envelope (\'{"data":[...], ...}\' — the ' +
+                'GET /v1/verification-keys response envelope (\'{"data":[...], ...}\'); the ' +
                 '.data array is unwrapped automatically, so the agledger_api response can be ' +
                 'passed straight through). Merged over any keys embedded in the export.',
             ),
@@ -417,7 +417,7 @@ export class AgledgerMcpServer {
             .optional()
             .describe(
               'High-assurance: refuse keys embedded in the export. An entry whose only key is ' +
-              'export-embedded fails CHAIN_KEY_POLICY_VIOLATION — forces verification against ' +
+              'export-embedded fails CHAIN_KEY_POLICY_VIOLATION, forcing verification against ' +
               'keys supplied out of band via publicKeys.',
             ),
         },
@@ -487,7 +487,7 @@ export class AgledgerMcpServer {
       'agledger://openapi',
       {
         description:
-          'The AGLedger API OpenAPI 3.0 specification. Fetches live from GET /openapi.json — always current with the running API instance.',
+          'The AGLedger API OpenAPI 3.0 specification. Fetches live from GET /openapi.json, always current with the running API instance.',
         mimeType: 'application/json',
       },
       async () => {
