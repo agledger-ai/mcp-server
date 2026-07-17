@@ -4,6 +4,17 @@ All notable changes to the AGLedger MCP Server will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.5.5] - 2026-07-16
+
+Docs and tooling. No tool-surface or behavior change.
+
+### Changed
+
+- The `agledger_discover` tool description now leads with notarize (cross-repo #99); the agent-facing quickstart string previously opened with "track accountability."
+- Removed dead vocabulary, stale naming history, and the phantom "fulfill" endpoint framing from the README and pitch text (#99).
+- Refreshed the lockfile to in-range latest (`@agledger/verify-core` 1.0.2, plus dev tooling).
+- Upgraded the TypeScript devDependency to `^7.0.2`. Build, typecheck, and tests all pass under 7.0.2.
+
 ## [2.5.4] - 2026-06-29
 
 ### Changed
