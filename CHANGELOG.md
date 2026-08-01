@@ -4,6 +4,21 @@ All notable changes to the AGLedger MCP Server will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.5.6] - 2026-08-01
+
+Security housekeeping. No tool-surface or behavior change.
+
+### Changed
+
+- Upgraded `@modelcontextprotocol/sdk` to `^1.30.0`. A fresh `npm install @agledger/mcp-server` previously ended with npm reporting moderate vulnerabilities, and enterprise CI that gates on `npm audit --audit-level=moderate` failed the install outright. The chain was `@modelcontextprotocol/sdk` to `@hono/node-server ^1.19.9`, and the advisory (GHSA-frvp-7c67-39w9, path traversal in `serve-static` on Windows via an encoded backslash) is fixed only in `@hono/node-server` 2.x. SDK 1.30.0 widened that range to `^1.19.9 || ^2.0.5`, so there is finally a fix path. Almost certainly not exploitable here, since it is Windows-only on a `serve-static` code path this package does not use, but "no fix available" reads badly on a security product.
+- Refreshed the lockfile to in-range latest, clearing the remaining transitive advisories: `@hono/node-server` 2.0.12, `hono` 4.12.33 (GHSA-xgm2-5f3f-mvvc, GHSA-hvrm-45r6-mjfj, GHSA-w62v-xxxg-mg59), `fast-uri` 3.1.5 (GHSA-v2hh-gcrm-f6hx, GHSA-4c8g-83qw-93j6), `body-parser` 2.3.0. `npm audit` now reports 0 vulnerabilities.
+
+### Notes
+
+- Verified against a live AGLedger API v1.3.4 over the in-memory MCP transport, not just mocks: all 75 tests pass, including the 8 live integration cases covering discover, auth identity, record list and create, the structured schema-help error, and the record lifecycle.
+
+Closes cross-repo agledger-agents#101.
+
 ## [2.5.5] - 2026-07-16
 
 Docs and tooling. No tool-surface or behavior change.
