@@ -37,7 +37,7 @@ Options:
 Tools:
   agledger_discover   Returns API health, your identity, and available scopes
   agledger_api        Make any AGLedger API call — the API guides you via nextSteps
-  agledger_verify     Verify an audit export offline (hash chain + Ed25519)
+  agledger_verify     Verify an audit export offline (hash chain + signatures)
 `,
     );
     process.exit(0);

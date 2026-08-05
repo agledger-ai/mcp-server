@@ -44,7 +44,7 @@ agledger-mcp --api-key <key> [--api-url <url>]
 |------|-------------|
 | `agledger_discover` | Returns API health, your identity, available scopes, and a quickstart workflow. Call this first. |
 | `agledger_api` | Make any AGLedger API call (method, path, params). The API returns `nextSteps` on every response for self-guided workflow discovery. |
-| `agledger_verify` | Verify a record audit export offline (COSE_Sign1 envelopes per RFC 9052, hash chain + Ed25519 signatures). No network calls. Returns `valid`, `verifiedEntries`, and a `brokenAt` pointer with a canonical failure `code` on failure. Pass `publicKeys` to supply keys out of band and `requireOutOfBandKeys` for an independent audit that refuses the export's embedded keys. Built on the shared `@agledger/verify-core`. |
+| `agledger_verify` | Verify a record audit export offline (COSE_Sign1 envelopes per RFC 9052, hash chain + envelope signatures, Ed25519 or ES256). No network calls. Returns `valid`, `verifiedEntries`, and a `brokenAt` pointer with a canonical failure `code` on failure. Pass `publicKeys` to supply keys out of band and `requireOutOfBandKeys` for an independent audit that refuses the export's embedded keys. Built on the shared `@agledger/verify-core`. |
 
 ### Agent workflow
 

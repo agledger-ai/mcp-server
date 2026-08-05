@@ -4,6 +4,14 @@ All notable changes to the AGLedger MCP Server will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.7.0] - 2026-08-05
+
+Signing-agility wave 2.
+
+### Added
+
+- **`agledger_verify` handles ES256 chains** via `@agledger/verify-core` 1.2.0 (dispatch bound to the trusted key's SPKI; unsupported algorithms still fail closed as `CHAIN_UNSUPPORTED_ALGORITHM`).
+
 ## [2.6.0] - 2026-08-05
 
 ### Changed
