@@ -16,6 +16,9 @@ function buildChainProtectedHeader(position: number, previousHash: string | null
   chainMap.set(1, position);
   chainMap.set(2, previousHash === null ? null : Buffer.from(previousHash, 'hex'));
   const header = new Map<number, unknown>();
+  // alg (label 1, EdDSA) is load-bearing since the verifier floor: the engine
+  // always writes it, and a missing alg is a tamper-class failure.
+  header.set(1, -8);
   header.set(-65537, chainMap);
   return cborEncode(header, rfc8949EncodeOptions);
 }
