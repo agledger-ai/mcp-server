@@ -376,17 +376,19 @@ export class AgledgerMcpServer {
         title: 'Verify Audit Export',
         description:
           'Verify an AGLedger record audit export offline (format 2.0, COSE_Sign1). ' +
-          'Decodes each entry\'s tagged COSE_Sign1 envelope (RFC 9052, EdDSA), recomputes ' +
+          'Decodes each entry\'s tagged COSE_Sign1 envelope (RFC 9052), recomputes ' +
           'sha256 over the envelope bytes, walks the hash chain, cross-checks the protected-' +
-          'header chain claim against the row columns, and verifies every Ed25519 signature. ' +
+          'header chain claim against the row columns, and verifies every envelope signature (Ed25519 or ES256, dispatched from the trusted key material; anything else fails closed). ' +
           'No network calls. For an independent audit, pass publicKeys obtained out of band ' +
           '(GET /v1/verification-keys or /.well-known/scitt-keys) rather than trusting the ' +
           'export\'s embedded keys; result.keyProvenance reports out-of-band vs embedded key use. ' +
           'On failure, brokenAt pinpoints the first entry that failed and its canonical code ' +
           '(CHAIN_HASH_MISMATCH, CHAIN_LINK_BROKEN, CHAIN_GENESIS_INVALID, CHAIN_COSE_DECODE_FAILED, ' +
-          'CHAIN_COSE_HEADER_MISMATCH, CHAIN_SIGNATURE_INVALID, CHAIN_SIGNATURE_MISSING_KEY, ' +
-          'CHAIN_KEY_POLICY_VIOLATION, CHAIN_POSITION_GAP, CHAIN_MALFORMED_ENTRY, UNSUPPORTED_FORMAT, ' +
-          'CHAIN_EMPTY). Obtain the export via agledger_api with method=GET, path=/v1/records/{id}/audit-export. ' +
+          'CHAIN_COSE_HEADER_MISMATCH, CHAIN_PAYLOAD_BINDING_MISMATCH, CHAIN_SIGNATURE_INVALID, ' +
+          'CHAIN_SIGNATURE_MISSING_KEY, CHAIN_KEY_POLICY_VIOLATION, CHAIN_ALG_MISMATCH, ' +
+          'CHAIN_SIGNING_KEY_DRIFT, CHAIN_UNSUPPORTED_ALGORITHM (this build cannot compute the ' +
+          'key\'s algorithm; upgrade, never a pass), CHAIN_POSITION_GAP, CHAIN_MALFORMED_ENTRY, ' +
+          'UNSUPPORTED_FORMAT, CHAIN_EMPTY). Obtain the export via agledger_api with method=GET, path=/v1/records/{id}/audit-export. ' +
           'For the raw COSE_Sign1 stream, use path=/v1/records/{id}/attestation.',
         inputSchema: {
           export: jsonStringField.describe(
@@ -399,7 +401,8 @@ export class AgledgerMcpServer {
             .describe(
               'Optional out-of-band signing keys. Accepts any of these as a JSON-encoded ' +
                 'string (or a native object/array): a compact map ' +
-                '\'{"key-1":"MCowBQYDK2VwAyEA..."}\', the list shape ' +
+                '\'{"key-1":"MCowBQYDK2VwAyEA..."}\' (values are base64 SPKI DER; Ed25519 keys ' +
+                'start "MCowBQYDK2Vw", P-256 keys "MFkwEwYHKoZIzj0"), the list shape ' +
                 '\'[{"keyId":"key-1","publicKey":"MCowBQYDK2VwAyEA..."}]\', or the raw ' +
                 'GET /v1/verification-keys response envelope (\'{"data":[...], ...}\'); the ' +
                 '.data array is unwrapped automatically, so the agledger_api response can be ' +
