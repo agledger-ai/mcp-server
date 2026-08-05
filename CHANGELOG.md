@@ -4,6 +4,12 @@ All notable changes to the AGLedger MCP Server will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.6.0] - 2026-08-05
+
+### Changed
+
+- **`agledger_verify` takes `@agledger/verify-core` `^1.1.0`, the verifier forward-compatibility floor.** Algorithm dispatch binds to the trusted verification key rather than the unverified protected header; tampered or missing header `alg` values fail as `CHAIN_ALG_MISMATCH`, a key algorithm beyond the build fails closed as `CHAIN_UNSUPPORTED_ALGORITHM`, the signature-covered kid is cross-checked against `signingKeyId` (`CHAIN_SIGNING_KEY_DRIFT`), and untagged COSE_Sign1 is rejected. Legitimate Ed25519 exports verify identically.
+
 ## [2.5.6] - 2026-08-01
 
 Security housekeeping. No tool-surface or behavior change.
