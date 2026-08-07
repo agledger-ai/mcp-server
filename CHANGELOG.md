@@ -4,6 +4,16 @@ All notable changes to the AGLedger MCP Server will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **`agledger://llms.txt` resource, and `agledger_discover` now names the narrative.** An MCP-connected agent had no way to learn `/llms.txt` existed: `discover` pointed only at OpenAPI, `resources/list` offered only the spec, and the string `llms` appeared nowhere in the package. The CLI advertised it, so the one integration surface built specifically for AI agents was the one hiding the API's agent-oriented documentation. The resource fetches live from `GET /llms.txt`, so it cannot go stale (agents#110).
+
+### Changed
+
+- **`--api-url` is now required.** The server defaulted to `https://agledger.example.com`, a placeholder that resolves nowhere, so a missing URL surfaced as a DNS failure against a host the operator never configured, on every tool call. It now refuses to start and says so. Every deployment is self-hosted, so there was no default worth having. Same defect the CLI and SDK carried (agents#105, agents#109); found while fixing agents#110, not separately filed.
+
 ## [2.7.0] - 2026-08-05
 
 Signing-agility wave 2.
