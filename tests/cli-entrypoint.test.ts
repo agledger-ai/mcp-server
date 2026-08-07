@@ -10,7 +10,7 @@
  * process can.
  */
 import { describe, it, expect, beforeAll } from 'vitest';
-import { execFile } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -52,10 +52,13 @@ function run(args: string[], env: Record<string, string> = {}): Promise<Run> {
 
 describe('agledger-mcp exit codes', () => {
   beforeAll(() => {
+    // Build on demand rather than depending on step order. These tests need
+    // the compiled binary, so a `npm test` on a clean checkout would otherwise
+    // fail on a missing artifact rather than on anything about the code.
     if (!existsSync(entrypoint)) {
-      throw new Error(`Build first: ${entrypoint} does not exist (npm run build).`);
+      execFileSync('npm', ['run', 'build'], { cwd: join(here, '..'), stdio: 'inherit' });
     }
-  });
+  }, 120_000);
 
   it('exits 2 when --api-url is missing, not 0', async () => {
     const r = await run(['--api-key', 'k']);
