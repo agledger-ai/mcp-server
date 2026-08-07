@@ -4,6 +4,29 @@ All notable changes to the AGLedger MCP Server will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.9.0] - 2026-08-07
+
+### Fixed
+
+- **A server that refuses to start now exits non-zero.** The `uncaughtException` handler printed the error and returned, which suppresses Node's default non-zero exit. Since 2.8.0 made `--api-url` mandatory, the most likely first-run failure (`agledger-mcp --api-key ...` with no URL) printed `Uncaught exception: No API URL configured` and then **exited 0**. Any launcher, supervisor, or shell reading the exit code saw a clean shutdown of a server that never accepted a connection. Missing `--api-key` exited 1 while missing `--api-url` exited 0, so the two halves of the same mistake reported opposite outcomes.
+
+- **The documented Quick Start could not start the server.** The `claude_desktop_config.json` example in the README passed only `--api-key`, and the `--help` usage line read `agledger-mcp --api-key <key> [--api-url <url>]`, marking as optional the flag 2.8.0 had made required. Copy-pasting either into a working MCP client produced a server that died at startup. Both now show `--api-url` as required, and a test spawns the built binary and asserts the shipped `--help` never brackets it again.
+
+- **An unknown flag is reported as usage, not as a crash.** `parseArgs` runs in strict mode, so `--version` (which this server does not implement) threw and surfaced as `Uncaught exception: Unknown option '--version'` with exit 0. It now prints an error, points at `--help`, and exits 2.
+
+### Changed (behavior)
+
+- **Exit codes are now a documented contract**: `0` clean, `1` runtime failure, `2` usage or configuration error. Configuration errors moved from 1 (missing key) and 0 (missing URL) to 2 uniformly. A launcher that keyed on the exact code `1` to mean "bad config" should read 2; anything treating non-zero as failure is unaffected, and the missing-URL case changes from a false success to a failure.
+
+### Internal
+
+- **The live integration suite no longer runs with placeholder credentials.** It probed `localhost:3001` and, if anything answered, ran with `agl_agt_test`, which every real Server rejects. The result was eight failures that read as a regression in whatever had just changed, when the only problem was an unset environment variable. Reachability is not permission, so it now skips on a missing key exactly as it skips on an unreachable API.
+
+### Packaging
+
+- **Source maps are no longer published.** They shipped with `sources` pointing at `../src/*.ts` and no `sourcesContent`, and `src/` is not in the tarball, so they resolved to nothing.
+- **`bugs` added to package.json.**
+
 ## [2.8.0] - 2026-08-07
 
 ### Added

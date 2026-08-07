@@ -4,8 +4,14 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { AgledgerMcpServer } from '../src/server.js';
 
 const API_URL = process.env.AGLEDGER_API_URL ?? 'http://localhost:3001';
-const API_KEY =
-  process.env.AGLEDGER_API_KEY ?? 'agl_agt_test';
+// No placeholder key fallback. `agl_agt_test` is not a credential: against a
+// real Server every call 401s, so the suite REPORTED 8 FAILURES that looked
+// exactly like a regression in whatever had just been changed, when the only
+// thing wrong was that nobody had exported a key. Reachability is not
+// permission. Skip unless a real key is supplied, the same way an unreachable
+// API skips.
+const API_KEY = process.env.AGLEDGER_API_KEY ?? '';
+const ADMIN_KEY = process.env.AGLEDGER_ADMIN_API_KEY ?? '';
 
 let client: Client;
 let cleanup: () => Promise<void>;
@@ -19,7 +25,7 @@ beforeAll(async () => {
     apiReachable = false;
   }
 
-  if (!apiReachable) return;
+  if (!apiReachable || !API_KEY) return;
 
   const server = new AgledgerMcpServer({ apiKey: API_KEY, apiUrl: API_URL });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -37,9 +43,17 @@ afterAll(async () => {
   if (cleanup) await cleanup();
 });
 
-function skipIfNoApi() {
+function skipIfNoApi(requireAdmin = false): boolean {
   if (!apiReachable) {
     console.log('Skipping: API not reachable at', API_URL);
+    return true;
+  }
+  if (!API_KEY) {
+    console.log('Skipping: AGLEDGER_API_KEY not set (API is up at', API_URL + ', but no credential was supplied)');
+    return true;
+  }
+  if (requireAdmin && !ADMIN_KEY) {
+    console.log('Skipping: AGLEDGER_ADMIN_API_KEY not set');
     return true;
   }
   return false;
@@ -71,8 +85,8 @@ describe('admin key (live)', () => {
   let adminCleanup: () => Promise<void>;
 
   beforeAll(async () => {
-    if (!apiReachable) return;
-    const adminKey = process.env.AGLEDGER_ADMIN_API_KEY ?? 'agl_adm_test';
+    if (!apiReachable || !ADMIN_KEY) return;
+    const adminKey = ADMIN_KEY;
     const server = new AgledgerMcpServer({ apiKey: adminKey, apiUrl: API_URL });
     const [ct, st] = InMemoryTransport.createLinkedPair();
     adminClient = new Client({ name: 'admin-test', version: '0.0.0-test' });
@@ -88,7 +102,7 @@ describe('admin key (live)', () => {
   });
 
   it('discover works with admin key', async () => {
-    if (skipIfNoApi()) return;
+    if (skipIfNoApi(true)) return;
     const result = await adminClient.callTool({ name: 'agledger_discover', arguments: {} });
     expect(result.isError).toBeFalsy();
     const content = result.structuredContent as Record<string, unknown>;
@@ -97,7 +111,7 @@ describe('admin key (live)', () => {
   });
 
   it('can list records with admin key', async () => {
-    if (skipIfNoApi()) return;
+    if (skipIfNoApi(true)) return;
     const result = await adminClient.callTool({
       name: 'agledger_api',
       arguments: { method: 'GET', path: '/v1/records', params: { limit: 1 } },

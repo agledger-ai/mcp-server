@@ -26,17 +26,27 @@ Add to your MCP client configuration (e.g. `claude_desktop_config.json`):
   "mcpServers": {
     "agledger": {
       "command": "agledger-mcp",
-      "args": ["--api-key", "your-api-key"]
+      "args": [
+        "--api-key", "your-api-key",
+        "--api-url", "https://your-agledger-instance"
+      ]
     }
   }
 }
 ```
 
+Both flags are required. AGLedger is self-hosted, so there is no default server
+to call: without `--api-url` the server exits before it accepts a connection.
+
 Or run directly:
 
 ```bash
-agledger-mcp --api-key <key> [--api-url <url>]
+agledger-mcp --api-key <key> --api-url <url>
 ```
+
+Exit codes: `0` clean, `1` runtime failure, `2` usage or configuration error
+(missing flag, unknown flag), so a launcher can tell a misconfiguration from a
+crash.
 
 ## Tools
 
