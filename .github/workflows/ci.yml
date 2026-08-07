@@ -29,8 +29,11 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Test
-        run: npm test
-
+      # Build BEFORE test: tests/cli-entrypoint.test.ts spawns the built
+      # dist/index.js, because the exit-code contract it guards lives in
+      # process wiring that no importable unit test can observe.
       - name: Build
         run: npm run build
+
+      - name: Test
+        run: npm test
