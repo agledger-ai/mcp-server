@@ -1,12 +1,15 @@
 {
   "name": "@agledger/mcp-server",
-  "version": "2.8.0",
+  "version": "2.9.0",
   "description": "AGLedger MCP Server: thin API pass-through for AI agents via MCP protocol",
   "license": "SEE LICENSE IN LICENSE",
   "author": "AGLedger LLC",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/agledger-ai/mcp-server.git"
+  },
+  "bugs": {
+    "url": "https://github.com/agledger-ai/mcp-server/issues"
   },
   "homepage": "https://agledger.ai",
   "keywords": [
@@ -25,6 +28,7 @@
   "types": "./dist/index.d.ts",
   "files": [
     "dist",
+    "!dist/**/*.map",
     "LICENSE",
     "README.md",
     "CHANGELOG.md"
