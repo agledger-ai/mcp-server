@@ -46,6 +46,15 @@ agledger-mcp --api-key <key> [--api-url <url>]
 | `agledger_api` | Make any AGLedger API call (method, path, params). The API returns `nextSteps` on every response for self-guided workflow discovery. |
 | `agledger_verify` | Verify a record audit export offline (COSE_Sign1 envelopes per RFC 9052, hash chain + envelope signatures, Ed25519 or ES256). No network calls. Returns `valid`, `verifiedEntries`, and a `brokenAt` pointer with a canonical failure `code` on failure. Pass `publicKeys` to supply keys out of band and `requireOutOfBandKeys` for an independent audit that refuses the export's embedded keys. Built on the shared `@agledger/verify-core`. |
 
+## Resources
+
+Both are fetched live from the running instance, so neither can go stale.
+
+| Resource | Description |
+|------|-------------|
+| `agledger://llms.txt` | The API's agent-oriented documentation narrative (the llms.txt convention): what the product does, the vocabulary, and how records, completions, gates and webhooks fit together. Read this first if you are new to the API. |
+| `agledger://openapi` | The OpenAPI 3.0 specification, for exact routes and request/response shapes. |
+
 ### Agent workflow
 
 The `agledger_discover` tool returns a quickstart workflow that guides agents through the accountability flow:
@@ -62,7 +71,7 @@ Every API error response includes a `suggestion` field with actionable recovery 
 | Flag | Env Var | Description |
 |------|---------|-------------|
 | `--api-key` | `AGLEDGER_API_KEY` | AGLedger API key (required) |
-| `--api-url` | `AGLEDGER_API_URL` | API base URL (default: `https://agledger.example.com`) |
+| `--api-url` | `AGLEDGER_API_URL` | API base URL of your instance (required). AGLedger is self-hosted, so there is no default; the server refuses to start without it. |
 
 ## What is AGLedger?
 

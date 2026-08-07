@@ -31,9 +31,18 @@ const QUICKSTART = {
 const DOCS = {
   description:
     'Every API response includes nextSteps for self-guided workflow discovery. ' +
-    'Call GET /openapi.json (also exposed as the agledger://openapi resource) for the full route catalog.',
+    'Call GET /openapi.json (also exposed as the agledger://openapi resource) for the full route catalog, ' +
+    'and GET /llms.txt (also exposed as the agledger://llms.txt resource) for the prose narrative ' +
+    'written for agents: what the product is for, the vocabulary, and how the pieces fit together. ' +
+    'Read llms.txt first if you are new to this API; read OpenAPI when you need exact routes.',
   openapi: '/openapi.json',
   openapiResource: 'agledger://openapi',
+  // The API's agent-oriented narrative. An MCP-connected agent never learned
+  // this existed: discover named only OpenAPI and resources/list offered only
+  // the spec, so the one integration surface built for agents hid the API's
+  // agent-facing documentation (agents#110).
+  narrative: '/llms.txt',
+  narrativeResource: 'agledger://llms.txt',
 } as const;
 
 // MCP spec 2025-06-18: structuredContent SHOULD also surface as content[]
@@ -158,7 +167,18 @@ export class AgledgerMcpServer {
   readonly client: ApiClient;
 
   constructor(options: AgledgerMcpServerOptions) {
-    const apiUrl = options.apiUrl ?? 'https://agledger.example.com';
+    // No placeholder default. agledger.example.com resolves nowhere, so a
+    // missing --api-url surfaced as a DNS failure against a host the operator
+    // never configured, on every tool call. Same defect the CLI and SDK carried
+    // (agents#105, agents#109); every deployment is self-hosted, so there is no
+    // default worth having. Fail at startup, where it can be read.
+    const apiUrl = options.apiUrl;
+    if (!apiUrl) {
+      throw new Error(
+        'No API URL configured. AGLedger is self-hosted, so the MCP server cannot guess your Server: ' +
+          'pass --api-url <url> or set AGLEDGER_API_URL.',
+      );
+    }
 
     this.client = new ApiClient(apiUrl, options.apiKey, options.timeoutMs);
 
@@ -250,7 +270,8 @@ export class AgledgerMcpServer {
           '3. POST /v1/records, create a record. ' +
           '4. POST /v1/records/{id}/completions, submit evidence when done. ' +
           'If a call fails, read the suggestion field in the error response. ' +
-          'For the full API catalog, GET /openapi.json (or read the agledger://openapi resource). ' +
+          'For the full API catalog, GET /openapi.json (or read the agledger://openapi resource); ' +
+          'for prose orientation, GET /llms.txt (or read the agledger://llms.txt resource). ' +
           'For GET/DELETE, params become query parameters. For POST/PUT/PATCH, params become the JSON body.',
         inputSchema: {
           method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).describe('HTTP method'),
@@ -504,6 +525,49 @@ export class AgledgerMcpServer {
               uri: 'agledger://openapi',
               mimeType: 'application/json',
               text: typeof response.body === 'string' ? response.body : JSON.stringify(response.body),
+            },
+          ],
+        };
+      },
+    );
+
+    /**
+     * Proxies GET /llms.txt at read time. The API writes this narrative for
+     * agents, and an MCP-connected agent had no way to learn it existed
+     * (agents#110): the CLI advertised it, this server did not. Same live-fetch
+     * approach as the spec resource, so it cannot go stale.
+     */
+    this.mcp.registerResource(
+      'agledger-llms-txt',
+      'agledger://llms.txt',
+      {
+        description:
+          "The AGLedger API's agent-oriented documentation narrative (the llms.txt convention). " +
+          'Prose orientation: what the product does, the vocabulary, and how records, completions, ' +
+          'gates and webhooks fit together. Fetches live from GET /llms.txt. Read this before the ' +
+          'OpenAPI spec if you are new to the API.',
+        mimeType: 'text/plain',
+      },
+      async () => {
+        const response = await client.request('GET', '/llms.txt');
+        if (!response.ok) {
+          throw new Error(`Failed to fetch /llms.txt: HTTP ${response.status}`);
+        }
+        // /llms.txt is text/plain, so the client surfaces the raw body rather
+        // than a parsed object.
+        const body = response.body as unknown;
+        const text =
+          typeof body === 'string'
+            ? body
+            : body && typeof body === 'object' && '_raw' in body
+              ? String((body as { _raw: unknown })._raw)
+              : JSON.stringify(body);
+        return {
+          contents: [
+            {
+              uri: 'agledger://llms.txt',
+              mimeType: 'text/plain',
+              text,
             },
           ],
         };

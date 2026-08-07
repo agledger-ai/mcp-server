@@ -230,6 +230,44 @@ describe('resource registration', () => {
 
     await expect(harness.client.readResource({ uri: 'agledger://openapi' })).rejects.toThrow();
   });
+
+  // agents#110: an MCP-connected agent never learned /llms.txt existed. The
+  // CLI advertised it; the surface built specifically for agents did not.
+  it('registers the agledger://llms.txt resource', async () => {
+    const { resources } = await harness.client.listResources();
+    const llms = resources.find((r) => r.uri === 'agledger://llms.txt');
+    expect(llms).toBeDefined();
+    expect(llms!.mimeType).toBe('text/plain');
+    expect(llms!.description).toContain('llms.txt');
+  });
+
+  it('reads the llms.txt resource by proxying to GET /llms.txt', async () => {
+    const narrative = '# AGLedger\n\nChange control for AI agents.\n';
+    const mockFetch = vi.fn().mockResolvedValueOnce(
+      new Response(narrative, {
+        status: 200,
+        headers: { 'content-type': 'text/plain' },
+      }),
+    );
+    vi.stubGlobal('fetch', mockFetch);
+
+    const result = await harness.client.readResource({ uri: 'agledger://llms.txt' });
+    expect(result.contents).toHaveLength(1);
+    const content = result.contents[0];
+    expect(content.uri).toBe('agledger://llms.txt');
+    expect(content.mimeType).toBe('text/plain');
+    expect(content.text).toContain('AGLedger');
+
+    expect(mockFetch.mock.calls[0][0] as string).toContain('/llms.txt');
+  });
+
+  it('surfaces upstream failure when /llms.txt is not reachable', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValueOnce(new Response('nope', { status: 404 })),
+    );
+    await expect(harness.client.readResource({ uri: 'agledger://llms.txt' })).rejects.toThrow();
+  });
 });
 
 describe('agledger_discover', () => {
@@ -268,10 +306,21 @@ describe('agledger_discover', () => {
     expect(quickstart.steps[2].path).toBe('/v1/records');
 
     // Docs hints always present — point at live API discovery and the openapi resource.
-    const docs = content.docs as { openapi: string; openapiResource: string; description: string };
+    const docs = content.docs as {
+      openapi: string;
+      openapiResource: string;
+      narrative: string;
+      narrativeResource: string;
+      description: string;
+    };
     expect(docs.openapi).toBe('/openapi.json');
     expect(docs.openapiResource).toBe('agledger://openapi');
     expect(docs.description).toContain('nextSteps');
+
+    // agents#110: discover must name the llms.txt narrative, not just OpenAPI.
+    expect(docs.narrative).toBe('/llms.txt');
+    expect(docs.narrativeResource).toBe('agledger://llms.txt');
+    expect(docs.description).toContain('llms.txt');
   });
 
   it('returns partial results when one call fails', async () => {
@@ -930,5 +979,26 @@ describe('serverInfo.version parity with package.json', () => {
       readFileSync(join(HERE, '..', 'package.json'), 'utf8'),
     ) as { version: string };
     expect(SERVER_VERSION).toBe(pkg.version);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// No placeholder host (same class as agents#105 / agents#109)
+// ---------------------------------------------------------------------------
+describe('apiUrl is required', () => {
+  it('refuses to start without an API URL', async () => {
+    const { AgledgerMcpServer } = await import('../src/server.js');
+    expect(() => new AgledgerMcpServer({ apiKey: 'k' } as never)).toThrow(/No API URL configured/);
+  });
+
+  it('never falls back to a placeholder host', async () => {
+    const { AgledgerMcpServer } = await import('../src/server.js');
+    let message = '';
+    try {
+      new AgledgerMcpServer({ apiKey: 'k' } as never);
+    } catch (err) {
+      message = (err as Error).message;
+    }
+    expect(message).not.toContain('agledger.example.com');
   });
 });
