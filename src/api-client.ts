@@ -67,6 +67,7 @@ export class ApiClient {
     options?: {
       query?: Record<string, unknown>;
       body?: unknown;
+      idempotencyKey?: string;
     },
   ): Promise<ApiResponse> {
     const url = new URL(path, this.apiUrl);
@@ -98,6 +99,15 @@ export class ApiClient {
 
     if (options?.body !== undefined) {
       headers['Content-Type'] = 'application/json';
+    }
+
+    // POST is the only method the API arms for idempotency: all 18 routes that
+    // declare `idempotent: true` are POST, and on any other method the header is
+    // ignored. A generated key makes each write replay-safe by default. An agent
+    // that retries a tool call after a timeout passes the key it used the first
+    // time, so the retry dedups instead of notarizing the same work twice.
+    if (method.toUpperCase() === 'POST') {
+      headers['Idempotency-Key'] = options?.idempotencyKey ?? crypto.randomUUID();
     }
 
     const controller = new AbortController();

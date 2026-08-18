@@ -293,6 +293,19 @@ export class AgledgerMcpServer {
                 'For GET/DELETE: becomes query parameters. For POST/PUT/PATCH: becomes the JSON body. ' +
                 'Native JSON objects are also accepted for compatibility.',
             ),
+          idempotencyKey: z
+            .string()
+            .max(256)
+            .optional()
+            .describe(
+              'Optional dedup key for POST calls, max 256 characters. Ignored on other methods. ' +
+                'One is generated per call when you omit it, so a single call is already replay-safe. ' +
+                'Pass your own only when you are retrying a call that may have already reached the ' +
+                'Server (a timeout, a dropped connection): reuse the exact key from the first attempt ' +
+                'and the Server returns the original result instead of notarizing the work twice. ' +
+                'A key is bound to method, route, and body, so a retry that changes the body is ' +
+                'rejected with 400 rather than silently replaying the old response.',
+            ),
         },
         annotations: {
           readOnlyHint: false,
@@ -313,7 +326,7 @@ export class AgledgerMcpServer {
       },
       async (args) => {
         try {
-          const { method, path, params } = args;
+          const { method, path, params, idempotencyKey } = args;
 
           if (!path.startsWith('/')) {
             return errorResult(
@@ -348,7 +361,13 @@ export class AgledgerMcpServer {
             );
           }
 
-          const options: { query?: Record<string, unknown>; body?: unknown } = {};
+          const options: {
+            query?: Record<string, unknown>;
+            body?: unknown;
+            idempotencyKey?: string;
+          } = {};
+
+          if (idempotencyKey !== undefined) options.idempotencyKey = idempotencyKey;
 
           if (params !== undefined && params !== '') {
             const decoded = parseJsonObject(params, 'params');

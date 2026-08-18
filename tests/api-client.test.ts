@@ -208,3 +208,77 @@ describe('ApiClient query serialization', () => {
     expect(url).toContain('limit=5');
   });
 });
+
+/**
+ * Idempotency on POST.
+ *
+ * The server could not send an `Idempotency-Key` at all, so an agent retrying
+ * a tool call after a timeout notarized the same work twice. All 18 routes the
+ * engine arms with `idempotent: true` are POST, which is why the header is
+ * scoped to POST rather than to every write verb.
+ */
+describe('ApiClient idempotency', () => {
+  // A Response body reads once, so each call needs its own instance.
+  const okFetch = () =>
+    vi.fn(
+      async () =>
+        new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } }),
+    );
+
+  function headersOf(mockFetch: ReturnType<typeof okFetch>, call = 0): Record<string, string> {
+    const [, options] = mockFetch.mock.calls[call] as unknown as [string, RequestInit];
+    return options.headers as Record<string, string>;
+  }
+
+  it('sends a generated Idempotency-Key on POST', async () => {
+    const mockFetch = okFetch();
+    vi.stubGlobal('fetch', mockFetch);
+
+    const client = new ApiClient('https://api.test.com', 'key');
+    await client.request('POST', '/v1/records', { body: { type: 'x' } });
+
+    expect(headersOf(mockFetch)['Idempotency-Key']).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    );
+  });
+
+  it('prefers an explicit key so an agent-driven retry dedups', async () => {
+    const mockFetch = okFetch();
+    vi.stubGlobal('fetch', mockFetch);
+
+    const client = new ApiClient('https://api.test.com', 'key');
+    await client.request('POST', '/v1/records', {
+      body: { type: 'x' },
+      idempotencyKey: 'retry-of-the-same-work',
+    });
+
+    expect(headersOf(mockFetch)['Idempotency-Key']).toBe('retry-of-the-same-work');
+  });
+
+  it('mints a fresh key per call, so two distinct writes never collide', async () => {
+    const mockFetch = okFetch();
+    vi.stubGlobal('fetch', mockFetch);
+
+    const client = new ApiClient('https://api.test.com', 'key');
+    await client.request('POST', '/v1/records', { body: { type: 'a' } });
+    await client.request('POST', '/v1/records', { body: { type: 'b' } });
+
+    expect(headersOf(mockFetch, 0)['Idempotency-Key']).not.toBe(
+      headersOf(mockFetch, 1)['Idempotency-Key'],
+    );
+  });
+
+  it('omits the header on methods the engine does not arm for idempotency', async () => {
+    const mockFetch = okFetch();
+    vi.stubGlobal('fetch', mockFetch);
+
+    const client = new ApiClient('https://api.test.com', 'key');
+    await client.request('GET', '/v1/records');
+    await client.request('PATCH', '/v1/records/r1', { body: { reason: 'x' } });
+    await client.request('DELETE', '/v1/webhooks/w1');
+
+    for (let i = 0; i < 3; i++) {
+      expect(headersOf(mockFetch, i)['Idempotency-Key']).toBeUndefined();
+    }
+  });
+});
