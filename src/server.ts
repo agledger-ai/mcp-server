@@ -269,6 +269,14 @@ export class AgledgerMcpServer {
           '2. GET /v1/schemas/{type}, get required fields and examples. ' +
           '3. POST /v1/records, create a record. ' +
           '4. POST /v1/records/{id}/completions, submit evidence when done. ' +
+          'Keeping ongoing work answerable: the ledger is append-only, so every past state ' +
+          'keeps matching a filter forever. When a record replaces an earlier one, send ' +
+          'supersedesRecordId on the new record; then GET /v1/records/search?superseded=false ' +
+          'returns only what is current. Read supersededByCount on a record to tell whether it ' +
+          'is still current (0) or has been replaced; above 1 means two writers superseded it ' +
+          'independently, so there are that many current heads and no single answer. ' +
+          'Filter on signed fields with criteria[key]=value, which selects on the same bytes an ' +
+          'auditor verifies offline; metadata[key]=value filters an unsigned annotation instead. ' +
           'If a call fails, read the suggestion field in the error response. ' +
           'For the full API catalog, GET /openapi.json (or read the agledger://openapi resource); ' +
           'for prose orientation, GET /llms.txt (or read the agledger://llms.txt resource). ' +
