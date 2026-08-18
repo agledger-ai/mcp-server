@@ -68,7 +68,7 @@ function buildEntry(
 ): Record<string, unknown> {
   // Sign a faithful in-toto v1 Statement: the engine signs `{ predicate: ... }`
   // where the predicate is the canonical row projection. The binding check
-  // (F-731) re-derives this from recordId/entryType/payload — the envelope must
+  // (F-731) re-derives this from recordId/entryType/payload; the envelope must
   // carry it or every entry trips CHAIN_PAYLOAD_BINDING_MISMATCH.
   const recordId = typeof payload.recordId === 'string' ? payload.recordId : 'REC-test-001';
   const predicate = { record_id: recordId, entry_type: ENTRY_TYPE, payload };
@@ -305,7 +305,7 @@ describe('agledger_discover', () => {
     expect(quickstart.steps[0].path).toBe('/v1/schemas');
     expect(quickstart.steps[2].path).toBe('/v1/records');
 
-    // Docs hints always present — point at live API discovery and the openapi resource.
+    // Docs hints always present: point at live API discovery and the openapi resource.
     const docs = content.docs as {
       openapi: string;
       openapiResource: string;
@@ -482,7 +482,7 @@ describe('agledger_api', () => {
     expect(text).toContain('control characters');
   });
 
-  it('rejects a protocol-relative path (// — would resolve off-origin and leak the API key)', async () => {
+  it('rejects a protocol-relative path (//, which would resolve off-origin and leak the API key)', async () => {
     const mockFetch = vi.fn();
     vi.stubGlobal('fetch', mockFetch);
 
@@ -523,7 +523,7 @@ describe('agledger_api', () => {
 
     expect(result.isError).toBe(true);
     const content = result.structuredContent as Record<string, unknown>;
-    expect(content).toEqual(errorBody); // exact match — no added fields
+    expect(content).toEqual(errorBody); // exact match, no added fields
     expect(content.suggestion).toBeUndefined();
   });
 
@@ -745,7 +745,7 @@ describe('agledger_verify', () => {
   });
 });
 
-describe('content[] mirror — every tool path returns non-empty content[]', () => {
+describe('content[] mirror: every tool path returns non-empty content[]', () => {
   it('agledger_discover success: content[] non-empty and parses to structuredContent', async () => {
     const mockFetch = vi
       .fn()
@@ -812,7 +812,7 @@ describe('content[] mirror — every tool path returns non-empty content[]', () 
     })) as CallToolResult;
 
     assertContentMirrorsStructured(result);
-    // The full structured error must be present in content[] — not just a
+    // The full structured error must be present in content[], not just a
     // short "Error: Forbidden" stripped of docUrl/suggestion/missingScopes.
     const text = (result.content![0] as { text: string }).text;
     expect(text).toContain('missingScopes');

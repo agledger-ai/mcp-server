@@ -53,7 +53,7 @@ function mirrorContent(structured: unknown): CallToolResult['content'] {
 
 /**
  * Structured error for CLI-origin failures (network, timeout, malformed input).
- * API-origin errors are forwarded verbatim without enrichment — if the API
+ * API-origin errors are forwarded verbatim without enrichment; if the API
  * returns a suggestion, agents see it; if not, that's an API concern to fix upstream.
  */
 function errorResult(message: string, code?: string, suggestion?: string): CallToolResult {
@@ -71,7 +71,7 @@ function errorResult(message: string, code?: string, suggestion?: string): CallT
 // function-call grammar (a strict OpenAPI 3.0 subset that rejects
 // `additionalProperties` and properties-less OBJECT) can emit them. Preprocess
 // keeps the door open for object-native runtimes (Claude Desktop, ChatGPT MCP)
-// that pass a native object — it re-stringifies before validation, then the
+// that pass a native object; it re-stringifies before validation, then the
 // handler JSON.parses uniformly.
 const jsonStringField = z.preprocess(
   (v) => (v !== null && typeof v === 'object' ? JSON.stringify(v) : v),
@@ -210,7 +210,7 @@ export class AgledgerMcpServer {
         },
         // SEP-1880 tool-level scopes (early adoption). This tool calls /health
         // (public), /v1/scope-profiles (public, security:[]), and /v1/auth/me
-        // (authenticated but no scope gate by design — any valid key may
+        // (authenticated but no scope gate by design, since any valid key may
         // introspect its own context). No NAMED scope is required, so the list
         // is empty: a valid API key suffices, but no specific scope gates it.
         _meta: { requiredScopes: [] as string[] },
@@ -303,7 +303,7 @@ export class AgledgerMcpServer {
           openWorldHint: true,
         },
         // SEP-1880 _meta.requiredScopes is deliberately OMITTED for this tool.
-        // agledger_api is the universal dispatcher — it forwards arbitrary
+        // agledger_api is the universal dispatcher; it forwards arbitrary
         // method+path to every route, each with its own scope requirement
         // (records:read, records:write, etc.). The required scope is route-
         // dependent and enforced server-side per request; it cannot be
@@ -460,7 +460,7 @@ export class AgledgerMcpServer {
           openWorldHint: false,
         },
         // SEP-1880 tool-level scopes (early adoption). This tool verifies an
-        // audit export entirely offline (no network, no API key) — no scope is
+        // audit export entirely offline (no network, no API key), so no scope is
         // required to invoke it.
         _meta: { requiredScopes: [] as string[] },
       },
@@ -509,7 +509,7 @@ export class AgledgerMcpServer {
     const client = this.client;
 
     /**
-     * Proxies GET /openapi.json at read time. Keeps the spec fresh — no local
+     * Proxies GET /openapi.json at read time. Keeps the spec fresh, with no local
      * cache that could go stale. Clients (Claude Desktop, etc.) surface this
      * in their resource picker, so users/agents can pull the spec into context
      * without constructing an `agledger_api` call.
