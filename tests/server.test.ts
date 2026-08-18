@@ -68,7 +68,7 @@ function buildEntry(
 ): Record<string, unknown> {
   // Sign a faithful in-toto v1 Statement: the engine signs `{ predicate: ... }`
   // where the predicate is the canonical row projection. The binding check
-  // (F-731) re-derives this from recordId/entryType/payload; the envelope must
+  // re-derives this from recordId/entryType/payload; the envelope must
   // carry it or every entry trips CHAIN_PAYLOAD_BINDING_MISMATCH.
   const recordId = typeof payload.recordId === 'string' ? payload.recordId : 'REC-test-001';
   const predicate = { record_id: recordId, entry_type: ENTRY_TYPE, payload };
@@ -231,7 +231,7 @@ describe('resource registration', () => {
     await expect(harness.client.readResource({ uri: 'agledger://openapi' })).rejects.toThrow();
   });
 
-  // agents#110: an MCP-connected agent never learned /llms.txt existed. The
+  // an MCP-connected agent never learned /llms.txt existed. The
   // CLI advertised it; the surface built specifically for agents did not.
   it('registers the agledger://llms.txt resource', async () => {
     const { resources } = await harness.client.listResources();
@@ -317,7 +317,7 @@ describe('agledger_discover', () => {
     expect(docs.openapiResource).toBe('agledger://openapi');
     expect(docs.description).toContain('nextSteps');
 
-    // agents#110: discover must name the llms.txt narrative, not just OpenAPI.
+    // discover must name the llms.txt narrative, not just OpenAPI.
     expect(docs.narrative).toBe('/llms.txt');
     expect(docs.narrativeResource).toBe('agledger://llms.txt');
     expect(docs.description).toContain('llms.txt');
@@ -706,7 +706,7 @@ describe('agledger_verify', () => {
     expect((result.structuredContent as Record<string, unknown>).valid).toBe(true);
   });
 
-  it('accepts the raw GET /v1/verification-keys envelope as publicKeys (F-737)', async () => {
+  it('accepts the raw GET /v1/verification-keys envelope as publicKeys', async () => {
     const kp = makeTestKeypair();
     const exp = makeTestExport(kp);
     // Independent-audit path: strip embedded keys, supply out-of-band.
@@ -835,7 +835,7 @@ describe('content[] mirror: every tool path returns non-empty content[]', () => 
   });
 });
 
-describe('F-532 Gemini-shape: free-form object fields accept stringified JSON', () => {
+describe('Gemini-shape: free-form object fields accept stringified JSON', () => {
   // Gemini's function-call grammar rejects `additionalProperties` and
   // properties-less OBJECT. The fix declares the three free-form fields as
   // `string` on the wire, parsed server-side. These tests pin both shapes.
@@ -983,7 +983,7 @@ describe('serverInfo.version parity with package.json', () => {
 });
 
 // ---------------------------------------------------------------------------
-// No placeholder host (same class as agents#105 / agents#109)
+// No placeholder host (same class as the CLI and SDK fixes)
 // ---------------------------------------------------------------------------
 describe('apiUrl is required', () => {
   it('refuses to start without an API URL', async () => {
