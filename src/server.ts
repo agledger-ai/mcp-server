@@ -40,7 +40,7 @@ const DOCS = {
   // The API's agent-oriented narrative. An MCP-connected agent never learned
   // this existed: discover named only OpenAPI and resources/list offered only
   // the spec, so the one integration surface built for agents hid the API's
-  // agent-facing documentation (agents#110).
+  // agent-facing documentation.
   narrative: '/llms.txt',
   narrativeResource: 'agledger://llms.txt',
 } as const;
@@ -149,7 +149,7 @@ function parseJsonObjectOrArray(
  * returns an envelope `{ data: [{ keyId, publicKey, ... }], canonicalization, ... }`,
  * not the bare array verify-core expects. An MCP agent's natural flow gets the
  * envelope straight from `agledger_api` and has no `.data[]`-extraction step,
- * so unwrap `.data` here (F-737, the MCP analogue of the CLI's F-732 fix). A
+ * so unwrap `.data` here, the MCP analogue of the CLI's fix. A
  * bare `[{keyId, publicKey}]` list or a `{keyId: base64}` map passes through
  * untouched; verify-core then validates the shape and throws on anything else.
  */
@@ -169,9 +169,9 @@ export class AgledgerMcpServer {
   constructor(options: AgledgerMcpServerOptions) {
     // No placeholder default. agledger.example.com resolves nowhere, so a
     // missing --api-url surfaced as a DNS failure against a host the operator
-    // never configured, on every tool call. Same defect the CLI and SDK carried
-    // (agents#105, agents#109); every deployment is self-hosted, so there is no
-    // default worth having. Fail at startup, where it can be read.
+    // never configured, on every tool call. Same defect the CLI and SDK
+    // carried; every deployment is self-hosted, so there is no default worth
+    // having. Fail at startup, where it can be read.
     const apiUrl = options.apiUrl;
     if (!apiUrl) {
       throw new Error(
@@ -541,9 +541,9 @@ export class AgledgerMcpServer {
 
     /**
      * Proxies GET /llms.txt at read time. The API writes this narrative for
-     * agents, and an MCP-connected agent had no way to learn it existed
-     * (agents#110): the CLI advertised it, this server did not. Same live-fetch
-     * approach as the spec resource, so it cannot go stale.
+     * agents, and an MCP-connected agent had no way to learn it existed: the
+     * CLI advertised it, this server did not. Same live-fetch approach as the
+     * spec resource, so it cannot go stale.
      */
     this.mcp.registerResource(
       'agledger-llms-txt',
