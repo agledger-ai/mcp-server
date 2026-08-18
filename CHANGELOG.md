@@ -4,7 +4,11 @@ All notable changes to the AGLedger MCP Server will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [2.10.0] - 2026-08-17
+## [2.10.0] - 2026-08-18
+
+### Added
+
+- **An `idempotencyKey` argument on `agledger_api`, and a generated key on every POST.** The server could not send an `Idempotency-Key` at all, so an agent retrying a tool call after a timeout notarized the same work twice. Every POST now carries a generated key, which makes a single call replay-safe on its own. An agent retrying a call that may already have reached the Server passes the key it used the first time, and the Server returns the original result instead of creating a second record. The key binds to method, route and body, so a retry that changes the body is rejected rather than silently replaying the old response. Scoped to POST because that is what the engine arms: all 18 routes that opt into idempotency are POST, and the header is ignored elsewhere.
 
 ### Fixed
 
