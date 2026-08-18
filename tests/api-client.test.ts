@@ -167,3 +167,44 @@ describe('ApiClient', () => {
     expect(result.status).toBe(404);
   });
 });
+
+describe('ApiClient query serialization', () => {
+  function stubOk() {
+    const mockFetch = vi.fn().mockResolvedValueOnce(
+      new Response(JSON.stringify({}), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    vi.stubGlobal('fetch', mockFetch);
+    return mockFetch;
+  }
+
+  it('expands object params into the API bracket notation', async () => {
+    // `String(value)` sent the literal `[object Object]`, so every
+    // metadata- or criteria-filtered search returned 400.
+    const mockFetch = stubOk();
+    const client = new ApiClient('https://api.test.com', 'key');
+    await client.request('GET', '/v1/records/search', {
+      query: { metadata: { state: 'blocked' }, criteria: { amount: '750' } },
+    });
+
+    const url = decodeURIComponent(mockFetch.mock.calls[0][0] as string);
+    expect(url).toContain('metadata[state]=blocked');
+    expect(url).toContain('criteria[amount]=750');
+    expect(url).not.toContain('[object Object]');
+  });
+
+  it('serializes a Date as ISO-8601 and keeps scalars untouched', async () => {
+    const mockFetch = stubOk();
+    const client = new ApiClient('https://api.test.com', 'key');
+    await client.request('GET', '/v1/records/search', {
+      query: { from: new Date(Date.UTC(2026, 0, 2, 3, 4, 5)), superseded: false, limit: 5 },
+    });
+
+    const url = decodeURIComponent(mockFetch.mock.calls[0][0] as string);
+    expect(url).toContain('from=2026-01-02T03:04:05.000Z');
+    expect(url).toContain('superseded=false');
+    expect(url).toContain('limit=5');
+  });
+});
