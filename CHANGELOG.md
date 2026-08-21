@@ -12,6 +12,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Fixed
 
+- **`agledger_verify` published its one mandatory argument as optional.** The tool advertised no `required` array at all, so every client read `export` as something it could omit. `jsonStringField` was built with `z.preprocess`, whose input is typed `unknown`; `unknown` subsumes `undefined`, so zod marked the field `optin: 'optional'` and the MCP SDK left it out of `required` when rendering the schema with `io: 'input'`. The field is now an explicit `unknown` piped through the transform, which reports required-ness correctly while still publishing as `type: string` and still accepting a native object from object-native runtimes. `agledger_api`, whose fields are plain `z.string()`, was never affected. Reported by agledger-testbed against the 2.10.0 candidate (F-982). A new `tests/tool-schema.test.ts` asserts the published `required` array of every tool, read back over a real client connection rather than from the zod, since that is where the two came apart.
+
 - **Object query parameters reached the wire as `[object Object]`.** The client ran every query value through `String(value)`, so `agledger_api` with `GET /v1/records/search` and a `criteria` or `metadata` filter returned 400 rather than filtering. Objects now expand into the API's bracket notation (`metadata[state]=blocked`), and a `Date` serializes as ISO-8601 rather than the JS locale form the date-time params reject. Found by driving the server against a live API.
 
 ### Changed

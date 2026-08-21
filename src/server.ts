@@ -69,14 +69,26 @@ function errorResult(message: string, code?: string, suggestion?: string): CallT
 
 // Free-form object fields are declared as `string` on the wire so Gemini's
 // function-call grammar (a strict OpenAPI 3.0 subset that rejects
-// `additionalProperties` and properties-less OBJECT) can emit them. Preprocess
-// keeps the door open for object-native runtimes (Claude Desktop, ChatGPT MCP)
-// that pass a native object; it re-stringifies before validation, then the
-// handler JSON.parses uniformly.
-const jsonStringField = z.preprocess(
-  (v) => (v !== null && typeof v === 'object' ? JSON.stringify(v) : v),
-  z.string(),
-);
+// `additionalProperties` and properties-less OBJECT) can emit them. The
+// transform keeps the door open for object-native runtimes (Claude Desktop,
+// ChatGPT MCP) that pass a native object; it re-stringifies before validation,
+// then the handler JSON.parses uniformly.
+//
+// Deliberately NOT `z.preprocess`, which published these fields as optional
+// even when they were required. The MCP SDK renders tool schemas with
+// `toJSONSchema(..., { io: 'input' })`, and that builds `required` from each
+// field's `_zod.optin`. `z.preprocess` types its input as `unknown`, which
+// subsumes `undefined`, so it sets `optin: 'optional'` and the field drops out
+// of `required`. `agledger_verify` published no `required` array at all, which
+// told every client its one mandatory argument was optional. Piping an explicit
+// `unknown` through the transform leaves `optin` unset, so required-ness is
+// reported correctly; `.meta` carries the wire type, which is otherwise the
+// empty schema. `tests/tool-schema.test.ts` locks all of it.
+const jsonStringField = z
+  .unknown()
+  .transform((v) => (v !== null && typeof v === 'object' ? JSON.stringify(v) : v))
+  .pipe(z.string())
+  .meta({ type: 'string' });
 
 function parseJsonObject(
   value: string,
