@@ -291,6 +291,9 @@ export class AgledgerMcpServer {
             .describe(
               'Request parameters as a JSON-encoded string, e.g. \'{"type":"notarize-generic-v1","criteria":{"task_description":"..."}}\'. ' +
                 'For GET/DELETE: becomes query parameters. For POST/PUT/PATCH: becomes the JSON body. ' +
+                'The body is not type-coerced, so write each value as the type the schema declares. ' +
+                'Identifier fields (externalTaskId, correlationId, platformRef, projectRef, publisher) are ' +
+                'strings even when the identifier is all digits: send "4821", not 4821. ' +
                 'Native JSON objects are also accepted for compatibility.',
             ),
           idempotencyKey: z
