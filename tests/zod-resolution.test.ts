@@ -59,21 +59,29 @@ describe('zod resolution', () => {
     expect(src).not.toMatch(/from 'zod'/);
   });
 
-  it('resolves one shared copy of zod in this tree', () => {
+  it('resolves one zod version for both sides in this tree', () => {
     const resolution = resolveZodCopies();
     expect(resolution, 'zod resolution could not be inspected').not.toBeNull();
     expect(
-      resolution!.split,
-      `split zod resolution:\n  ours: ${resolution!.ours}\n  sdk:  ${resolution!.sdk}`,
+      resolution!.skewed,
+      `zod version skew:\n  ours: ${resolution!.ours}\n  sdk:  ${resolution!.sdk}`,
     ).toBe(false);
   });
 
-  it('names both paths in the warning, because versions can be identical', () => {
-    // Two copies of the SAME version are still two registries. Reporting
-    // versions would print "4.4.3 vs 4.4.3" and read as a false alarm.
-    const warning = zodSplitWarning({ ours: '/a/node_modules/zod', sdk: '/b/node_modules/zod', split: true });
-    expect(warning).toContain('/a/node_modules/zod');
-    expect(warning).toContain('/b/node_modules/zod');
+  it('treats two copies of the same version as healthy', () => {
+    // Measured, not assumed: a host pinned below the `zod/v4` floor nests a
+    // private copy for each side, and with both on the same release the
+    // published contract is complete. Warning there would be a false alarm on
+    // a working install, which is worse than no warning at all.
+    const sameVersion = resolveZodCopies();
+    expect(sameVersion?.skewed).toBe(false);
+    expect(zodSplitWarning({ ours: '4.4.3', sdk: '3.25.76', skewed: true })).toContain('4.4.3');
+  });
+
+  it('names both versions in the warning', () => {
+    const warning = zodSplitWarning({ ours: '4.4.3', sdk: '3.25.76', skewed: true });
+    expect(warning).toContain('zod 4.4.3');
+    expect(warning).toContain('zod 3.25.76');
     expect(warning).toContain('dedupe');
   });
 

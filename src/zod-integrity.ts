@@ -2,63 +2,65 @@ import { createRequire } from 'node:module';
 import { dirname } from 'node:path';
 
 /**
- * Whether this package and the MCP SDK resolve the same copy of zod.
+ * Which zod this package and the MCP SDK each resolve.
  *
- * They must. `.describe()` and `.meta()` do not live on the schema: they write
- * into zod's registry, and that registry belongs to the module instance that
- * created it. The MCP SDK renders our tool schemas with the zod IT resolves, so
- * when a host tree gives the SDK one copy and this package another, the SDK
- * looks our schemas up in a registry that never saw them. Every field
- * description disappears and the JSON-string fields lose `type` entirely.
+ * They have to agree on the VERSION. The SDK renders our tool schemas with the
+ * zod it resolves, and a renderer from a different zod release does not
+ * understand the schema internals this one produces: a 4.4.3 schema rendered by
+ * 3.25.76 comes out as `{}`, losing every argument description and the `type`
+ * of every JSON-string argument. Nothing throws. The server starts, connects
+ * and answers calls; agents just receive the tool contract with the guidance
+ * stripped out of it.
  *
- * Nothing throws. The server starts, connects, and answers calls; agents just
- * receive a tool contract with the guidance stripped out of it. That silence is
- * why this is checked rather than left to be noticed.
+ * Two SEPARATE COPIES of the same version are fine, which is why this compares
+ * versions rather than paths. That distinction is measured, not assumed: a tree
+ * pinning zod below the `zod/v4` floor nests a private copy for each side, and
+ * with both on 4.4.3 the published contract is complete. Warning on that tree
+ * would be a false alarm on a working install.
  *
- * The `zod` peer dependency is what prevents the split. This catches an install
- * that overrode it: `--legacy-peer-deps`, a pnpm or yarn resolution, a zod 3
- * pinned above this package, or a vendored tree.
+ * Matching the SDK's `^3.25 || ^4.0` range and importing `zod/v4` is what lets
+ * npm dedupe to one copy. This catches the trees where it cannot: a host pinned
+ * below 3.25, `--legacy-peer-deps`, a pnpm or yarn resolution.
  */
 export interface ZodResolution {
-  /** Absolute path of the zod this package uses. */
+  /** Version of the zod this package uses. */
   ours: string;
-  /** Absolute path of the zod the MCP SDK uses. */
+  /** Version of the zod the MCP SDK uses. */
   sdk: string;
-  /** True when the two are different copies, whatever their versions. */
-  split: boolean;
+  /** True when the two are different releases, whether or not they are separate copies. */
+  skewed: boolean;
 }
 
 /**
  * Returns null when resolution cannot be inspected at all (a bundled build, an
  * unusual loader). Undetectable is not the same as broken, so callers stay
- * quiet rather than warning on a tree they cannot see.
+ * quiet rather than warning about a tree they cannot see.
  */
 export function resolveZodCopies(fromUrl: string = import.meta.url): ZodResolution | null {
   try {
     const require = createRequire(fromUrl);
-    const ours = require.resolve('zod/package.json');
+    const ours = require('zod/package.json') as { version: string };
     const sdkDir = dirname(require.resolve('@modelcontextprotocol/sdk/package.json'));
-    const sdk = require.resolve('zod/package.json', { paths: [sdkDir] });
-    return { ours, sdk, split: ours !== sdk };
+    const sdkRequire = createRequire(`${sdkDir}/`);
+    const sdk = sdkRequire('zod/package.json') as { version: string };
+    return { ours: ours.version, sdk: sdk.version, skewed: ours.version !== sdk.version };
   } catch {
     return null;
   }
 }
 
-/**
- * Warning text for a split tree. Two copies of the same version are still two
- * registries, so this reports paths rather than versions: identical version
- * numbers here would read as a false alarm when they are the actual fault.
- */
+/** Warning text for a version-skewed tree. */
 export function zodSplitWarning(resolution: ZodResolution): string {
   return (
-    'Warning: this host tree resolved two different copies of zod.\n' +
-    `  @agledger/mcp-server:      ${resolution.ours}\n` +
-    `  @modelcontextprotocol/sdk: ${resolution.sdk}\n` +
-    'The SDK renders this server\'s tool schemas against its own copy, so every argument ' +
-    'description and the type of every JSON-string argument are dropped from the published ' +
-    'contract. The server still answers calls; agents receive it with the guidance removed.\n' +
-    'Fix: dedupe zod to a single v4 copy (`npm dedupe`, or remove a zod 3 pinned above this ' +
-    'package). This package declares zod as a peer dependency for exactly this reason.\n'
+    'Warning: this host tree resolved two different versions of zod.\n' +
+    `  @agledger/mcp-server:      zod ${resolution.ours}\n` +
+    `  @modelcontextprotocol/sdk: zod ${resolution.sdk}\n` +
+    "The SDK renders this server's tool schemas with its own copy, and a renderer from a " +
+    'different zod release cannot read these schemas: every argument description and the ' +
+    'type of every JSON-string argument are dropped from the published contract. The server ' +
+    'still answers calls; agents receive it with the guidance removed.\n' +
+    'Fix: dedupe zod to one version (`npm dedupe`, or raise a zod pinned below 3.25 above ' +
+    'this package). This package accepts the same range the SDK does so a single copy can ' +
+    'serve both.\n'
   );
 }
