@@ -98,13 +98,14 @@ Exit codes: 0 clean, 1 runtime failure, 2 usage or configuration error.
 
   const server = new AgledgerMcpServer({ apiKey, apiUrl });
 
-  // A split zod resolution strips every argument description and the type of
-  // every JSON-string argument out of the published tool contract, and throws
-  // nothing while doing it. Warn rather than exit: the server does still answer
+  // A version-skewed zod resolution strips every argument description and the
+  // type of every JSON-string argument out of the published tool contract, and
+  // throws nothing while doing it. Two copies of the SAME version render fine,
+  // so this warns on skew only. Warn rather than exit: the server does still answer
   // calls, and killing a working deployment over degraded guidance would be the
   // worse failure. Silence when resolution cannot be inspected.
   const zod = resolveZodCopies();
-  if (zod?.split) process.stderr.write(zodSplitWarning(zod));
+  if (zod?.skewed) process.stderr.write(zodSplitWarning(zod));
 
   const transport = new StdioServerTransport();
 
