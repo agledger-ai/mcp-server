@@ -2,6 +2,7 @@
 import { parseArgs } from 'node:util';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { AgledgerMcpServer, SERVER_VERSION } from './server.js';
+import { resolveZodCopies, zodSplitWarning } from './zod-integrity.js';
 
 /**
  * Exit codes. A launcher that supervises this process, or a shell wrapping it,
@@ -96,6 +97,15 @@ Exit codes: 0 clean, 1 runtime failure, 2 usage or configuration error.
   }
 
   const server = new AgledgerMcpServer({ apiKey, apiUrl });
+
+  // A split zod resolution strips every argument description and the type of
+  // every JSON-string argument out of the published tool contract, and throws
+  // nothing while doing it. Warn rather than exit: the server does still answer
+  // calls, and killing a working deployment over degraded guidance would be the
+  // worse failure. Silence when resolution cannot be inspected.
+  const zod = resolveZodCopies();
+  if (zod?.split) process.stderr.write(zodSplitWarning(zod));
+
   const transport = new StdioServerTransport();
 
   server.mcp.connect(transport).catch((err: unknown) => {
