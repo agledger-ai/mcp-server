@@ -1,4 +1,17 @@
-import { z } from 'zod';
+// `zod/v4`, not `zod`. The MCP SDK declares zod as a non-optional peer across
+// `^3.25 || ^4.0` and imports the version-specific subpaths, so it runs on
+// whichever major the host tree holds. Importing bare `zod` pinned us to v4 and
+// forced npm to nest a second copy whenever a host held zod 3 -- and two copies
+// of zod means two registries. `.describe()` and `.meta()` write into the
+// registry rather than onto the schema, so the SDK rendered our tools against a
+// registry that had never seen them: every argument description gone, and the
+// type of every JSON-string argument with it. Nothing threw.
+//
+// zod 3.25 ships the v4 implementation under this subpath, so one import works
+// on both majors and lets npm resolve a single shared copy. Matching the SDK's
+// dependency range is what makes the dedupe possible; see `zod-integrity.ts`
+// for the check that catches a tree which splits them anyway.
+import { z } from 'zod/v4';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import {
