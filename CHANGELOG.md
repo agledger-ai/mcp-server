@@ -4,6 +4,32 @@ All notable changes to the AGLedger MCP Server will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+
+- **The server can authenticate with an OIDC token instead of an API key** (#30). Set `AGLEDGER_OIDC_TOKEN_FILE` (a file holding the token, such as a Kubernetes projected service-account token) or `AGLEDGER_OIDC_TOKEN_CMD` (a shell command that prints one), plus `AGLEDGER_OIDC_AGENT_ID` if the cert should bind to a specific agent. The server generates an Ed25519 key pair in memory, exchanges the token for a short-lived cert signed by the Server (`POST /v1/auth/oidc/cert`) and presents the cert as its bearer. No long-lived secret sits in the MCP client configuration, and nothing is written to disk. An API key still wins when one is set, then the command, then the file; the server prints a note naming any source it ignores.
+
+  - The token source is consulted on every exchange: the file is re-read and the command re-run, because the Server exchanges a given token id (`jti`) only once and a projected token is rotated on disk under a running process. A file that still holds the token already exchanged is recognised locally and not sent, so an unrotated file costs no request and no warning while the current cert is valid, and produces an error naming the rotation interval once the cert has expired.
+  - The cert is re-exchanged once half its lifetime has passed, measured from when it was received so clock skew cannot shorten or stretch it. Concurrent tool calls share one exchange. A refresh that fails while the current cert is still valid keeps it and prints one warning on stderr.
+  - A 401 on a cert bearer (a revoked cert) forces exactly one re-exchange and one retry of the request, with the same body bytes and the same `Idempotency-Key`. A second 401 is returned as the answer.
+  - Every request body is signed with the key bound to the cert (`X-Agent-Signature-Content-Hash` and `X-Agent-Signature`), so the Server records the agent's own signature in the chain entry (`predicate.on_behalf_of.agent_signature`) on the routes that accept one.
+  - A failed exchange reaches the tool result as `code: OIDC_EXCHANGE_FAILED` with the Server's status, error body and `recoveryHint`; a token source that cannot produce a token is `OIDC_TOKEN_SOURCE_FAILED`. Tokens are scrubbed from both, and a failing command's stderr is included with anything shaped like a JWT removed. The command text itself is never echoed, since it can carry a secret of its own.
+  - `agledger_discover` fetches `/health` without a credential, so "is the Server up" stays answerable when the credential is what is broken.
+  - `--help` and the no-credential startup error list all three credential sources. A token file that cannot be read exits 2 at startup rather than failing on the first tool call.
+
+### Fixed
+
+- **An argument a tool does not declare is refused instead of dropped** (#29). `agledger_api` called with `body` in place of `params` sent the request with no payload, and the agent read the Server's `body must be object` as a problem with its payload rather than with the argument name. Each tool now answers an undeclared argument with `code: UNKNOWN_ARGUMENT`, naming the argument and the ones it accepts, before anything is sent. The published tool schemas are unchanged: required arguments stay required, every description is intact, and no `additionalProperties` keyword appears, which `tests/tool-schema.test.ts` asserts on the `tools/list` document.
+
+- **The `agledger_api` description pointed agents at a field the Server does not send.** It said to read `suggestion` on a failed call; the Server's error bodies carry `recoveryHint`. The description and the README now name `recoveryHint` for Server errors and `suggestion` for errors the tool raises itself.
+
+- **The `agledger_verify` description listed 16 of the 19 failure codes an audit export can produce.** `CHAIN_OIDC_ACTOR_MISMATCH`, `CHAIN_KEY_EXPIRED` and `CHAIN_KEY_NOT_YET_ACTIVE` were missing. The list is now checked against `@agledger/verify-core`'s `FailureCode` union at compile time, so a new code there fails the build here until the description carries it.
+
+### Changed
+
+- The README states what AGLedger is in current terms: agent memory, approvals, audit trail and notifications on one API and one signed ledger, self-hosted.
+
 ## [2.10.1] - 2026-09-10
 
 ### Changed
