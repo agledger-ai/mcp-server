@@ -16,6 +16,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import {
   verifyAuditExport,
+  type FailureCode,
   type OutOfBandKeyEntry,
   type RecordAuditExportInput,
 } from '@agledger/verify-core';
@@ -269,6 +270,46 @@ function unwrapVerificationKeys(
   return raw as Record<string, string> | ReadonlyArray<OutOfBandKeyEntry>;
 }
 
+/**
+ * Every code `agledger_verify` can report, named in its description so a model
+ * can branch on them. The list used to be typed out by hand and fell three
+ * codes behind verify-core (CHAIN_OIDC_ACTOR_MISMATCH, CHAIN_KEY_EXPIRED,
+ * CHAIN_KEY_NOT_YET_ACTIVE). `ExportCodesMissing` below makes the compiler
+ * fail when verify-core adds an export-level code this list does not carry.
+ * CHECKPOINT_* and TENANT_* are dump-verifier codes and never come back from
+ * an audit export.
+ */
+const EXPORT_FAILURE_CODES = [
+  'CHAIN_HASH_MISMATCH',
+  'CHAIN_LINK_BROKEN',
+  'CHAIN_GENESIS_INVALID',
+  'CHAIN_POSITION_GAP',
+  'CHAIN_MALFORMED_ENTRY',
+  'CHAIN_COSE_DECODE_FAILED',
+  'CHAIN_COSE_HEADER_MISMATCH',
+  'CHAIN_PAYLOAD_BINDING_MISMATCH',
+  'CHAIN_OIDC_ACTOR_MISMATCH',
+  'CHAIN_SIGNATURE_INVALID',
+  'CHAIN_SIGNATURE_MISSING_KEY',
+  'CHAIN_KEY_POLICY_VIOLATION',
+  'CHAIN_KEY_EXPIRED',
+  'CHAIN_KEY_NOT_YET_ACTIVE',
+  'CHAIN_ALG_MISMATCH',
+  'CHAIN_SIGNING_KEY_DRIFT',
+  'CHAIN_UNSUPPORTED_ALGORITHM',
+  'UNSUPPORTED_FORMAT',
+  'CHAIN_EMPTY',
+] as const satisfies readonly FailureCode[];
+
+type ExportCodesMissing = Exclude<
+  Extract<FailureCode, `CHAIN_${string}` | 'UNSUPPORTED_FORMAT'>,
+  (typeof EXPORT_FAILURE_CODES)[number]
+>;
+// Resolves to `true` only when nothing is missing; otherwise the assignment
+// fails and the error names the missing code.
+const exportCodesComplete: [ExportCodesMissing] extends [never] ? true : ExportCodesMissing = true;
+void exportCodesComplete;
+
 const DISCOVER_ARGS = {} satisfies z.ZodRawShape;
 
 const API_ARGS = {
@@ -466,7 +507,8 @@ export class AgledgerMcpServer {
           'independently, so there are that many current heads and no single answer. ' +
           'Filter on signed fields with criteria[key]=value, which selects on the same bytes an ' +
           'auditor verifies offline; metadata[key]=value filters an unsigned annotation instead. ' +
-          'If a call fails, read the suggestion field in the error response. ' +
+          'If a call fails, the error says how to recover: recoveryHint on an error from the Server, ' +
+          'suggestion on an error this tool raises itself (a bad argument, a timeout, a credential failure). ' +
           'For the full API catalog, GET /openapi.json (or read the agledger://openapi resource); ' +
           'for prose orientation, GET /llms.txt (or read the agledger://llms.txt resource). ' +
           'For GET/DELETE, params become query parameters. For POST/PUT/PATCH, params become the JSON body.',
@@ -604,12 +646,8 @@ export class AgledgerMcpServer {
           '(GET /v1/verification-keys or /.well-known/scitt-keys) rather than trusting the ' +
           'export\'s embedded keys; result.keyProvenance reports out-of-band vs embedded key use. ' +
           'On failure, brokenAt pinpoints the first entry that failed and its canonical code ' +
-          '(CHAIN_HASH_MISMATCH, CHAIN_LINK_BROKEN, CHAIN_GENESIS_INVALID, CHAIN_COSE_DECODE_FAILED, ' +
-          'CHAIN_COSE_HEADER_MISMATCH, CHAIN_PAYLOAD_BINDING_MISMATCH, CHAIN_SIGNATURE_INVALID, ' +
-          'CHAIN_SIGNATURE_MISSING_KEY, CHAIN_KEY_POLICY_VIOLATION, CHAIN_ALG_MISMATCH, ' +
-          'CHAIN_SIGNING_KEY_DRIFT, CHAIN_UNSUPPORTED_ALGORITHM (this build cannot compute the ' +
-          'key\'s algorithm; upgrade, never a pass), CHAIN_POSITION_GAP, CHAIN_MALFORMED_ENTRY, ' +
-          'UNSUPPORTED_FORMAT, CHAIN_EMPTY). Obtain the export via agledger_api with method=GET, path=/v1/records/{id}/audit-export. ' +
+          `(${EXPORT_FAILURE_CODES.join(', ')}); CHAIN_UNSUPPORTED_ALGORITHM means this build ` +
+          'could not compute the key\'s algorithm: upgrade, and never read it as a pass. Obtain the export via agledger_api with method=GET, path=/v1/records/{id}/audit-export. ' +
           'For the raw COSE_Sign1 stream, use path=/v1/records/{id}/attestation.',
         inputSchema: toolInput(VERIFY_ARGS),
         annotations: {
