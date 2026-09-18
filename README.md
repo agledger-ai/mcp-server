@@ -114,6 +114,37 @@ volumes:
             path: token
 ```
 
+## Acting on behalf of someone
+
+When the agent does work for a person or another party rather than for
+itself, the operator can give the server an RFC 8693 delegation token: the
+token-exchange result your IdP issues, whose `act` claim names the agent. The
+server sends it as the `AGLedger-On-Behalf-Of` header on every POST, and the
+Server validates it against a trusted issuer registered with
+`appliesTo: principal` and seals it into the chain entry as
+`predicate.on_behalf_of`. The token comes from the process, never from a tool
+argument, so the model can neither read nor choose it; `agledger_discover`
+reports only whether a delegation is configured and where it comes from.
+
+| Env var | Description |
+|---------|-------------|
+| `AGLEDGER_ON_BEHALF_OF_CMD` | A shell command whose stdout is the delegation token. Wins over the file. |
+| `AGLEDGER_ON_BEHALF_OF_FILE` | A file holding the delegation token. |
+
+```bash
+AGLEDGER_OIDC_TOKEN_FILE=/var/run/secrets/agledger/token \
+AGLEDGER_ON_BEHALF_OF_FILE=/var/run/secrets/agledger/on-behalf-of \
+  agledger-mcp --api-url https://your-agledger-instance
+```
+
+A delegation token is not single use, so it is kept until its `exp` and read
+again after that, or when the Server refuses it with a 401 that names the
+delegation (the request is then retried once). With the OIDC cert credential
+the delegation is recorded `bound`: the token's `act.sub` and actor issuer must
+be the cert's own subject and issuer, or the Server answers 403
+`ACTOR_BINDING_MISMATCH`. With an API key there is no validated caller identity
+to compare, and it is recorded `unbound`.
+
 ## Tools
 
 | Tool | Description |

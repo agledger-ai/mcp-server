@@ -27,6 +27,7 @@ import {
   OidcTokenSourceError,
   type OidcCertCredentialOptions,
 } from './credentials.js';
+import { DelegationSource, DelegationSourceError, type DelegationSourceOptions } from './delegation.js';
 import { SERVER_VERSION } from './version.js';
 
 export { SERVER_VERSION };
@@ -41,6 +42,12 @@ export interface AgledgerMcpServerOptions {
    * `oidc` is required.
    */
   oidc?: OidcCertCredentialOptions;
+  /**
+   * The source of an RFC 8693 delegation token, sent as `AGLedger-On-Behalf-Of`
+   * on every POST when the agent acts for a person or another party. Never a
+   * tool argument: the model can neither read nor choose it.
+   */
+  onBehalfOf?: DelegationSourceOptions;
   apiUrl?: string;
   /** Request timeout in milliseconds. Default 30000. */
   timeoutMs?: number;
@@ -115,6 +122,13 @@ function credentialErrorResult(err: unknown): CallToolResult | undefined {
       err.recoveryHint ??
         'The OIDC cert exchange was refused. Check that the token source yields a current token from an issuer registered for agents on this Server.',
       err.status ? { status: err.status, response: err.body } : undefined,
+    );
+  }
+  if (err instanceof DelegationSourceError) {
+    return errorResult(
+      err.message,
+      err.code,
+      'Fix the delegation source the server was started with (AGLEDGER_ON_BEHALF_OF_CMD or AGLEDGER_ON_BEHALF_OF_FILE); it must yield a current RFC 8693 token-exchange result token.',
     );
   }
   if (err instanceof OidcTokenSourceError) {
@@ -403,7 +417,12 @@ export class AgledgerMcpServer {
     }
     const credential = options.apiKey ? options.apiKey : new OidcCertCredential(options.oidc!);
 
-    this.client = new ApiClient(apiUrl, credential, options.timeoutMs);
+    this.client = new ApiClient(
+      apiUrl,
+      credential,
+      options.timeoutMs,
+      options.onBehalfOf ? new DelegationSource(options.onBehalfOf) : undefined,
+    );
 
     this.mcp = new McpServer(
       { name: 'agledger-mcp-server', version: SERVER_VERSION },
@@ -478,6 +497,17 @@ export class AgledgerMcpServer {
             result.scopeProfiles = scopeProfiles.value.body;
           }
 
+          // Whether POSTs carry an AGLedger-On-Behalf-Of delegation, and from
+          // where. The token itself is never shown.
+          const delegationOrigin = client.delegationOrigin;
+          result.delegation = delegationOrigin
+            ? {
+                configured: true,
+                source: delegationOrigin,
+                note: 'Every POST carries an AGLedger-On-Behalf-Of delegation token; the Server seals it as predicate.on_behalf_of on the chain entry.',
+              }
+            : { configured: false };
+
           result.quickstart = QUICKSTART;
           result.docs = DOCS;
 
@@ -511,7 +541,9 @@ export class AgledgerMcpServer {
           'suggestion on an error this tool raises itself (a bad argument, a timeout, a credential failure). ' +
           'For the full API catalog, GET /openapi.json (or read the agledger://openapi resource); ' +
           'for prose orientation, GET /llms.txt (or read the agledger://llms.txt resource). ' +
-          'For GET/DELETE, params become query parameters. For POST/PUT/PATCH, params become the JSON body.',
+          'For GET/DELETE, params become query parameters. For POST/PUT/PATCH, params become the JSON body. ' +
+          'When agledger_discover reports a delegation, every POST carries the AGLedger-On-Behalf-Of header ' +
+          'the operator configured; it is not something you pass.',
         inputSchema: toolInput(API_ARGS),
         annotations: {
           readOnlyHint: false,

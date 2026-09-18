@@ -1,4 +1,5 @@
-import { ApiKeyCredential, type Credential } from './credentials.js';
+import { ApiKeyCredential, cutSecret, type Credential } from './credentials.js';
+import { namesDelegation, ON_BEHALF_OF_HEADER, type DelegationSource } from './delegation.js';
 import { SERVER_VERSION } from './version.js';
 
 const USER_AGENT = `agledger-mcp-server/${SERVER_VERSION}`;
@@ -65,12 +66,28 @@ export class ApiClient {
   private readonly apiUrl: string;
   private readonly credential: Credential;
   private readonly timeoutMs: number;
+  private readonly delegation: DelegationSource | undefined;
 
-  /** `credential` is an API key string or a {@link Credential} (e.g. an OIDC cert credential). */
-  constructor(apiUrl: string, credential: string | Credential, timeoutMs = 30_000) {
+  /**
+   * `credential` is an API key string or a {@link Credential} (e.g. an OIDC
+   * cert credential). `delegation`, when set, supplies the
+   * `AGLedger-On-Behalf-Of` token attached to every POST.
+   */
+  constructor(
+    apiUrl: string,
+    credential: string | Credential,
+    timeoutMs = 30_000,
+    delegation?: DelegationSource,
+  ) {
     this.apiUrl = stripTrailingSlashes(apiUrl);
     this.credential = typeof credential === 'string' ? new ApiKeyCredential(credential) : credential;
     this.timeoutMs = timeoutMs;
+    this.delegation = delegation;
+  }
+
+  /** Where the delegation token comes from, or undefined when none is configured. Never the token. */
+  get delegationOrigin(): string | undefined {
+    return this.delegation?.origin;
   }
 
   async request(method: string, path: string, options?: RequestOptions): Promise<ApiResponse> {
@@ -128,15 +145,37 @@ export class ApiClient {
       Object.assign(headers, this.credential.signBody(body));
     }
 
-    const ctx = { postAnonymous: (p: string, b: unknown) => this.postAnonymous(p, b) };
-    const bearer = await this.credential.bearer(ctx);
-    const first = await this.send(url, method, { ...headers, Authorization: `Bearer ${bearer}` }, body);
-    if (first.status !== 401 || !this.credential.renewable) return first;
+    // Every route that declares AGLedger-On-Behalf-Of is a POST.
+    let onBehalfOf =
+      this.delegation && method.toUpperCase() === 'POST' ? await this.delegation.token() : undefined;
+    const withDelegation = (h: Record<string, string>) =>
+      onBehalfOf ? { ...h, [ON_BEHALF_OF_HEADER]: onBehalfOf } : h;
 
-    // A cert can be revoked or expire server-side before our clock says so.
-    // Exactly one re-exchange and one retry; a second 401 is the answer.
-    const renewed = await this.credential.bearer({ ...ctx, rejected: bearer });
-    return this.send(url, method, { ...headers, Authorization: `Bearer ${renewed}` }, body);
+    const ctx = { postAnonymous: (p: string, b: unknown) => this.postAnonymous(p, b) };
+    let bearer = await this.credential.bearer(ctx);
+    const first = await this.send(url, method, withDelegation({ ...headers, Authorization: `Bearer ${bearer}` }), body);
+    if (first.status !== 401) return this.scrubbed(first, onBehalfOf);
+
+    // At most one retry, renewing whichever credential the 401 is about. A
+    // delegation token is re-read only when the Server names it; otherwise a
+    // cert can be revoked or expire server-side before our clock says so, and
+    // gets exactly one re-exchange. A second 401 is the answer.
+    if (onBehalfOf && namesDelegation(first.body)) {
+      const refused = onBehalfOf;
+      onBehalfOf = await this.delegation!.token(refused);
+      if (onBehalfOf === refused) return this.scrubbed(first, refused);
+    } else if (this.credential.renewable) {
+      bearer = await this.credential.bearer({ ...ctx, rejected: bearer });
+    } else {
+      return this.scrubbed(first, onBehalfOf);
+    }
+    const second = await this.send(url, method, withDelegation({ ...headers, Authorization: `Bearer ${bearer}` }), body);
+    return this.scrubbed(second, onBehalfOf);
+  }
+
+  /** The delegation token never comes back to a tool, even if the Server echoes it. */
+  private scrubbed(res: ApiResponse, onBehalfOf: string | undefined): ApiResponse {
+    return onBehalfOf ? { ...res, body: cutSecret(res.body, onBehalfOf) } : res;
   }
 
   private async postAnonymous(path: string, payload: unknown): Promise<{ status: number; body: unknown }> {

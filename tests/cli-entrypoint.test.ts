@@ -166,6 +166,32 @@ describe('agledger-mcp exit codes', () => {
     expect(c.stderr).toContain('Note: AGLEDGER_OIDC_TOKEN_FILE is set but not used: AGLEDGER_OIDC_TOKEN_CMD takes precedence.');
   });
 
+  it('documents the delegation sources in --help', async () => {
+    const r = await run(['--help']);
+    for (const name of ['AGLEDGER_ON_BEHALF_OF_CMD', 'AGLEDGER_ON_BEHALF_OF_FILE', 'AGLedger-On-Behalf-Of']) {
+      expect(r.stderr).toContain(name);
+    }
+  });
+
+  it('exits 2 when AGLEDGER_ON_BEHALF_OF_FILE names a file that cannot be read', async () => {
+    const r = await run(['--api-key', 'k', '--api-url', 'https://example.invalid'], {
+      AGLEDGER_ON_BEHALF_OF_FILE: '/nonexistent/obo',
+    });
+    expect(r.code).toBe(2);
+    expect(r.stderr).toContain('AGLEDGER_ON_BEHALF_OF_FILE names a file that cannot be read: /nonexistent/obo');
+  });
+
+  it('prefers the delegation command over the file, and says so', async () => {
+    const r = await run(['--api-key', 'k', '--api-url', 'https://example.invalid'], {
+      AGLEDGER_ON_BEHALF_OF_CMD: 'false',
+      AGLEDGER_ON_BEHALF_OF_FILE: '/nonexistent/obo',
+    });
+    expect(r.code).toBe(0);
+    expect(r.stderr).toContain(
+      'Note: AGLEDGER_ON_BEHALF_OF_FILE is set but not used: AGLEDGER_ON_BEHALF_OF_CMD takes precedence.',
+    );
+  });
+
   it('never names a placeholder host in a configuration error', async () => {
     const r = await run(['--api-key', 'k']);
     expect(r.stderr).not.toContain('agledger.example.com');
