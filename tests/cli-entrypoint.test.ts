@@ -11,7 +11,8 @@
  */
 import { describe, it, expect, beforeAll } from 'vitest';
 import { execFile, execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -103,6 +104,66 @@ describe('agledger-mcp exit codes', () => {
       AGLEDGER_API_URL: 'https://example.invalid',
     });
     expect(r.code).toBe(0);
+  });
+
+  it('lists all three credential sources when none is set', async () => {
+    const r = await run(['--api-url', 'https://example.invalid']);
+    expect(r.code).toBe(2);
+    for (const source of ['AGLEDGER_API_KEY', 'AGLEDGER_OIDC_TOKEN_CMD', 'AGLEDGER_OIDC_TOKEN_FILE']) {
+      expect(r.stderr).toContain(source);
+    }
+  });
+
+  it('documents all three credential sources and the agent id in --help', async () => {
+    const r = await run(['--help']);
+    for (const name of ['AGLEDGER_API_KEY', 'AGLEDGER_OIDC_TOKEN_CMD', 'AGLEDGER_OIDC_TOKEN_FILE', 'AGLEDGER_OIDC_AGENT_ID']) {
+      expect(r.stderr).toContain(name);
+    }
+  });
+
+  it('starts with only AGLEDGER_OIDC_TOKEN_FILE set, without exchanging at startup', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agledger-mcp-entry-'));
+    try {
+      const file = join(dir, 'token');
+      writeFileSync(file, 'not-read-until-a-tool-call');
+      const r = await run([], { AGLEDGER_OIDC_TOKEN_FILE: file, AGLEDGER_API_URL: 'https://example.invalid' });
+      expect(r.code).toBe(0);
+      expect(r.stderr).toBe('');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('starts with only AGLEDGER_OIDC_TOKEN_CMD set', async () => {
+    const r = await run([], { AGLEDGER_OIDC_TOKEN_CMD: 'false', AGLEDGER_API_URL: 'https://example.invalid' });
+    expect(r.code).toBe(0);
+  });
+
+  it('exits 2 when AGLEDGER_OIDC_TOKEN_FILE names a file that cannot be read', async () => {
+    const r = await run([], {
+      AGLEDGER_OIDC_TOKEN_FILE: '/nonexistent/agledger/token',
+      AGLEDGER_API_URL: 'https://example.invalid',
+    });
+    expect(r.code).toBe(2);
+    expect(r.stderr).toContain('AGLEDGER_OIDC_TOKEN_FILE names a file that cannot be read: /nonexistent/agledger/token');
+  });
+
+  it('says which lower-precedence source it ignores', async () => {
+    const r = await run(['--api-key', 'k', '--api-url', 'https://example.invalid'], {
+      AGLEDGER_OIDC_TOKEN_CMD: 'false',
+      AGLEDGER_OIDC_TOKEN_FILE: '/nonexistent',
+    });
+    expect(r.code).toBe(0);
+    expect(r.stderr).toContain(
+      'Note: AGLEDGER_OIDC_TOKEN_CMD and AGLEDGER_OIDC_TOKEN_FILE are set but not used: the API key takes precedence.',
+    );
+    const c = await run([], {
+      AGLEDGER_API_URL: 'https://example.invalid',
+      AGLEDGER_OIDC_TOKEN_CMD: 'false',
+      AGLEDGER_OIDC_TOKEN_FILE: '/nonexistent',
+    });
+    expect(c.code).toBe(0);
+    expect(c.stderr).toContain('Note: AGLEDGER_OIDC_TOKEN_FILE is set but not used: AGLEDGER_OIDC_TOKEN_CMD takes precedence.');
   });
 
   it('never names a placeholder host in a configuration error', async () => {

@@ -20,12 +20,26 @@ import {
   type RecordAuditExportInput,
 } from '@agledger/verify-core';
 import { ApiClient } from './api-client.js';
+import {
+  OidcCertCredential,
+  OidcExchangeError,
+  OidcTokenSourceError,
+  type OidcCertCredentialOptions,
+} from './credentials.js';
 import { SERVER_VERSION } from './version.js';
 
 export { SERVER_VERSION };
 
 export interface AgledgerMcpServerOptions {
-  apiKey: string;
+  /** An AGLedger API key. Exactly one of `apiKey` and `oidc` is required. */
+  apiKey?: string;
+  /**
+   * Authenticate with a short-lived cert exchanged for a customer IdP token
+   * (`POST /v1/auth/oidc/cert`). `getOidcToken` is called for every exchange
+   * and must return a fresh token each time. Exactly one of `apiKey` and
+   * `oidc` is required.
+   */
+  oidc?: OidcCertCredentialOptions;
   apiUrl?: string;
   /** Request timeout in milliseconds. Default 30000. */
   timeoutMs?: number;
@@ -69,15 +83,47 @@ function mirrorContent(structured: unknown): CallToolResult['content'] {
  * API-origin errors are forwarded verbatim without enrichment; if the API
  * returns a suggestion, agents see it; if not, that's an API concern to fix upstream.
  */
-function errorResult(message: string, code?: string, suggestion?: string): CallToolResult {
+function errorResult(
+  message: string,
+  code?: string,
+  suggestion?: string,
+  extra?: Record<string, unknown>,
+): CallToolResult {
   const structuredContent: Record<string, unknown> = { error: true, message };
   if (code) structuredContent.code = code;
   if (suggestion) structuredContent.suggestion = suggestion;
+  if (extra) Object.assign(structuredContent, extra);
   return {
     content: mirrorContent(structuredContent),
     structuredContent,
     isError: true,
   };
+}
+
+/**
+ * The credential could not produce a bearer. This is a client-side failure (the
+ * request never went out), so it is reported in the server's own error shape.
+ * The exchange's refusal is carried as the Server sent it, scrubbed of any
+ * token, and its recoveryHint is passed through rather than rewritten.
+ */
+function credentialErrorResult(err: unknown): CallToolResult | undefined {
+  if (err instanceof OidcExchangeError) {
+    return errorResult(
+      err.message,
+      err.code,
+      err.recoveryHint ??
+        'The OIDC cert exchange was refused. Check that the token source yields a current token from an issuer registered for agents on this Server.',
+      err.status ? { status: err.status, response: err.body } : undefined,
+    );
+  }
+  if (err instanceof OidcTokenSourceError) {
+    return errorResult(
+      err.message,
+      err.code,
+      'Fix the token source the server was started with (AGLEDGER_OIDC_TOKEN_CMD or AGLEDGER_OIDC_TOKEN_FILE); it must yield a current OIDC JWT on every call.',
+    );
+  }
+  return undefined;
 }
 
 // Free-form object fields are declared as `string` on the wire so Gemini's
@@ -187,6 +233,73 @@ function unwrapVerificationKeys(
   return raw as Record<string, string> | ReadonlyArray<OutOfBandKeyEntry>;
 }
 
+const DISCOVER_ARGS = {} satisfies z.ZodRawShape;
+
+const API_ARGS = {
+  method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).describe('HTTP method'),
+  path: z
+    .string()
+    .describe('API path starting with / (e.g. /v1/records, /v1/schemas, /v1/records/{id}/completions)'),
+  params: jsonStringField
+    .optional()
+    .describe(
+      'Request parameters as a JSON-encoded string, e.g. \'{"type":"notarize-generic-v1","criteria":{"task_description":"..."}}\'. ' +
+        'For GET/DELETE: becomes query parameters. For POST/PUT/PATCH: becomes the JSON body. ' +
+        'The body is not type-coerced, so write each value as the type the schema declares. ' +
+        'Identifier fields (externalTaskId, correlationId, platformRef, projectRef, publisher) are ' +
+        'strings even when the identifier is all digits: send "4821", not 4821. ' +
+        'Native JSON objects are also accepted for compatibility.',
+    ),
+  idempotencyKey: z
+    .string()
+    .max(256)
+    .optional()
+    .describe(
+      'Optional dedup key for POST calls, max 256 characters. Ignored on other methods. ' +
+        'One is generated per call when you omit it, so a single call is already replay-safe. ' +
+        'Pass your own only when you are retrying a call that may have already reached the ' +
+        'Server (a timeout, a dropped connection): reuse the exact key from the first attempt ' +
+        'and the Server returns the original result instead of notarizing the work twice. ' +
+        'A key is bound to method, route, and body, so a retry that changes the body is ' +
+        'rejected with 400 rather than silently replaying the old response.',
+    ),
+} satisfies z.ZodRawShape;
+
+const VERIFY_ARGS = {
+  export: jsonStringField.describe(
+    'The audit export as a JSON-encoded string (the response body from ' +
+      'GET /v1/records/{id}/audit-export, JSON.stringify\'d). Native JSON ' +
+      'objects are also accepted for compatibility.',
+  ),
+  publicKeys: jsonStringField
+    .optional()
+    .describe(
+      'Optional out-of-band signing keys. Accepts any of these as a JSON-encoded ' +
+        'string (or a native object/array): a compact map ' +
+        '\'{"key-1":"MCowBQYDK2VwAyEA..."}\' (values are base64 SPKI DER; Ed25519 keys ' +
+        'start "MCowBQYDK2Vw", P-256 keys "MFkwEwYHKoZIzj0"), the list shape ' +
+        '\'[{"keyId":"key-1","publicKey":"MCowBQYDK2VwAyEA..."}]\', or the raw ' +
+        'GET /v1/verification-keys response envelope (\'{"data":[...], ...}\'); the ' +
+        '.data array is unwrapped automatically, so the agledger_api response can be ' +
+        'passed straight through). Merged over any keys embedded in the export.',
+    ),
+  requireKeyId: z
+    .string()
+    .optional()
+    .describe(
+      'If set, every entry must reference this keyId. Rejects exports signed by a ' +
+      'retired or unexpected key even if cryptographically valid.',
+    ),
+  requireOutOfBandKeys: z
+    .boolean()
+    .optional()
+    .describe(
+      'High-assurance: refuse keys embedded in the export. An entry whose only key is ' +
+      'export-embedded fails CHAIN_KEY_POLICY_VIOLATION, forcing verification against ' +
+      'keys supplied out of band via publicKeys.',
+    ),
+} satisfies z.ZodRawShape;
+
 export class AgledgerMcpServer {
   readonly mcp: McpServer;
   readonly client: ApiClient;
@@ -205,7 +318,15 @@ export class AgledgerMcpServer {
       );
     }
 
-    this.client = new ApiClient(apiUrl, options.apiKey, options.timeoutMs);
+    if (Boolean(options.apiKey) === Boolean(options.oidc)) {
+      throw new Error(
+        'Configure exactly one credential: an API key (--api-key or AGLEDGER_API_KEY) or an OIDC token source ' +
+          '(AGLEDGER_OIDC_TOKEN_CMD or AGLEDGER_OIDC_TOKEN_FILE).',
+      );
+    }
+    const credential = options.apiKey ? options.apiKey : new OidcCertCredential(options.oidc!);
+
+    this.client = new ApiClient(apiUrl, credential, options.timeoutMs);
 
     this.mcp = new McpServer(
       { name: 'agledger-mcp-server', version: SERVER_VERSION },
@@ -226,7 +347,7 @@ export class AgledgerMcpServer {
         description:
           'Returns API health, your identity, available scopes, and a quickstart workflow. ' +
           'Call this first. The response tells you who you are and what to do next.',
-        inputSchema: {},
+        inputSchema: DISCOVER_ARGS,
         annotations: {
           readOnlyHint: true,
           destructiveHint: false,
@@ -243,7 +364,9 @@ export class AgledgerMcpServer {
       async () => {
         try {
           const [health, identity, scopeProfiles] = await Promise.allSettled([
-            client.request('GET', '/health'),
+            // Anonymous, so "is the Server up" stays answerable when the
+            // credential is what is broken.
+            client.request('GET', '/health', { anonymous: true }),
             client.request('GET', '/v1/auth/me'),
             client.request('GET', '/v1/scope-profiles'),
           ]);
@@ -261,12 +384,15 @@ export class AgledgerMcpServer {
           if (identity.status === 'fulfilled') {
             result.identity = identity.value.body;
           } else {
-            result.identity = {
-              error:
-                identity.reason instanceof Error
-                  ? identity.reason.message
-                  : String(identity.reason),
-            };
+            const credentialError = credentialErrorResult(identity.reason);
+            result.identity = credentialError
+              ? credentialError.structuredContent
+              : {
+                  error:
+                    identity.reason instanceof Error
+                      ? identity.reason.message
+                      : String(identity.reason),
+                };
           }
 
           if (scopeProfiles.status === 'fulfilled') {
@@ -306,35 +432,7 @@ export class AgledgerMcpServer {
           'For the full API catalog, GET /openapi.json (or read the agledger://openapi resource); ' +
           'for prose orientation, GET /llms.txt (or read the agledger://llms.txt resource). ' +
           'For GET/DELETE, params become query parameters. For POST/PUT/PATCH, params become the JSON body.',
-        inputSchema: {
-          method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).describe('HTTP method'),
-          path: z
-            .string()
-            .describe('API path starting with / (e.g. /v1/records, /v1/schemas, /v1/records/{id}/completions)'),
-          params: jsonStringField
-            .optional()
-            .describe(
-              'Request parameters as a JSON-encoded string, e.g. \'{"type":"notarize-generic-v1","criteria":{"task_description":"..."}}\'. ' +
-                'For GET/DELETE: becomes query parameters. For POST/PUT/PATCH: becomes the JSON body. ' +
-                'The body is not type-coerced, so write each value as the type the schema declares. ' +
-                'Identifier fields (externalTaskId, correlationId, platformRef, projectRef, publisher) are ' +
-                'strings even when the identifier is all digits: send "4821", not 4821. ' +
-                'Native JSON objects are also accepted for compatibility.',
-            ),
-          idempotencyKey: z
-            .string()
-            .max(256)
-            .optional()
-            .describe(
-              'Optional dedup key for POST calls, max 256 characters. Ignored on other methods. ' +
-                'One is generated per call when you omit it, so a single call is already replay-safe. ' +
-                'Pass your own only when you are retrying a call that may have already reached the ' +
-                'Server (a timeout, a dropped connection): reuse the exact key from the first attempt ' +
-                'and the Server returns the original result instead of notarizing the work twice. ' +
-                'A key is bound to method, route, and body, so a retry that changes the body is ' +
-                'rejected with 400 rather than silently replaying the old response.',
-            ),
-        },
+        inputSchema: API_ARGS,
         annotations: {
           readOnlyHint: false,
           // This tool dispatches to any route, including DELETE/PATCH, so it can
@@ -427,6 +525,8 @@ export class AgledgerMcpServer {
             isError: true,
           };
         } catch (err) {
+          const credentialError = credentialErrorResult(err);
+          if (credentialError) return credentialError;
           if (err instanceof DOMException && err.name === 'AbortError') {
             return errorResult(
               'The API did not respond in time. Retry the same request.',
@@ -466,40 +566,7 @@ export class AgledgerMcpServer {
           'key\'s algorithm; upgrade, never a pass), CHAIN_POSITION_GAP, CHAIN_MALFORMED_ENTRY, ' +
           'UNSUPPORTED_FORMAT, CHAIN_EMPTY). Obtain the export via agledger_api with method=GET, path=/v1/records/{id}/audit-export. ' +
           'For the raw COSE_Sign1 stream, use path=/v1/records/{id}/attestation.',
-        inputSchema: {
-          export: jsonStringField.describe(
-            'The audit export as a JSON-encoded string (the response body from ' +
-              'GET /v1/records/{id}/audit-export, JSON.stringify\'d). Native JSON ' +
-              'objects are also accepted for compatibility.',
-          ),
-          publicKeys: jsonStringField
-            .optional()
-            .describe(
-              'Optional out-of-band signing keys. Accepts any of these as a JSON-encoded ' +
-                'string (or a native object/array): a compact map ' +
-                '\'{"key-1":"MCowBQYDK2VwAyEA..."}\' (values are base64 SPKI DER; Ed25519 keys ' +
-                'start "MCowBQYDK2Vw", P-256 keys "MFkwEwYHKoZIzj0"), the list shape ' +
-                '\'[{"keyId":"key-1","publicKey":"MCowBQYDK2VwAyEA..."}]\', or the raw ' +
-                'GET /v1/verification-keys response envelope (\'{"data":[...], ...}\'); the ' +
-                '.data array is unwrapped automatically, so the agledger_api response can be ' +
-                'passed straight through). Merged over any keys embedded in the export.',
-            ),
-          requireKeyId: z
-            .string()
-            .optional()
-            .describe(
-              'If set, every entry must reference this keyId. Rejects exports signed by a ' +
-              'retired or unexpected key even if cryptographically valid.',
-            ),
-          requireOutOfBandKeys: z
-            .boolean()
-            .optional()
-            .describe(
-              'High-assurance: refuse keys embedded in the export. An entry whose only key is ' +
-              'export-embedded fails CHAIN_KEY_POLICY_VIOLATION, forcing verification against ' +
-              'keys supplied out of band via publicKeys.',
-            ),
-        },
+        inputSchema: VERIFY_ARGS,
         annotations: {
           readOnlyHint: true,
           destructiveHint: false,
