@@ -151,7 +151,7 @@ to compare, and it is recorded `unbound`.
 |------|-------------|
 | `agledger_discover` | Returns API health, your identity, available scopes, and a quickstart workflow. Call this first. |
 | `agledger_api` | Make any AGLedger API call (method, path, params). Every POST carries a generated `Idempotency-Key`; pass `idempotencyKey` to reuse the first attempt's key when retrying a call that may already have landed. The API returns `nextSteps` on every response for self-guided workflow discovery. |
-| `agledger_verify` | Verify a record audit export offline (COSE_Sign1 envelopes per RFC 9052, hash chain + envelope signatures, Ed25519 or ES256). No network calls. Returns `valid`, `verifiedEntries`, and a `brokenAt` pointer with a canonical failure `code` on failure. Pass `publicKeys` to supply keys out of band and `requireOutOfBandKeys` for an independent audit that refuses the export's embedded keys. Built on the shared `@agledger/verify-core`. |
+| `agledger_verify` | Verify a record audit export offline (COSE_Sign1 envelopes per RFC 9052, hash chain + envelope signatures, Ed25519 or ES256). No network calls. Returns `valid`, `verifiedEntries`, and a `brokenAt` pointer with a canonical failure `code` on failure. Pass `publicKeys` to supply keys out of band and `requireOutOfBandKeys` for an independent audit that refuses the export's embedded keys. Pass `agentKeys` (the agents' cert public keys as JWKs) to re-verify the agent signatures sealed in the chain; without them those signatures are counted but not checked. Built on the shared `@agledger/verify-core`. |
 
 ## Resources
 

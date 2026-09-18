@@ -62,7 +62,7 @@ describe('published tool schemas', () => {
     // emitted by several of the obvious ways to fix the required bug, and would
     // break that client class without failing anything else.
     const verify = schemaFor('agledger_verify');
-    for (const field of ['export', 'publicKeys']) {
+    for (const field of ['export', 'publicKeys', 'agentKeys']) {
       expect(verify.properties?.[field]).toMatchObject({ type: 'string' });
       expect(verify.properties?.[field]).not.toHaveProperty('anyOf');
     }

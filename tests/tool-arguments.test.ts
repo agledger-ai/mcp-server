@@ -73,3 +73,41 @@ describe('undeclared tool arguments are refused, not dropped', () => {
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 });
+
+describe('agledger_verify agentKeys', () => {
+  let harness: TestHarness;
+  beforeAll(async () => {
+    harness = await createTestHarness();
+  });
+  afterAll(async () => {
+    await harness.cleanup();
+  });
+
+  it('refuses agentKeys that are not an array', async () => {
+    const result = (await harness.client.callTool({
+      name: 'agledger_verify',
+      arguments: { export: '{"exportFormatVersion":"2.0","entries":[]}', agentKeys: '{"kty":"OKP"}' },
+    })) as CallToolResult;
+    expect(result.isError).toBe(true);
+    const sc = result.structuredContent as Record<string, unknown>;
+    expect(sc.code).toBe('INVALID_JSON');
+    expect(String(sc.message)).toContain('agentKeys');
+  });
+
+  it('passes agentKeys to verify-core, which rejects a key that is not an Ed25519 JWK', async () => {
+    const result = (await harness.client.callTool({
+      name: 'agledger_verify',
+      arguments: {
+        export: JSON.stringify({
+          exportMetadata: { recordId: 'r', exportFormatVersion: '2.0', canonicalization: 'RFC8949-CDE' },
+          entries: [],
+        }),
+        agentKeys: '[{"kty":"RSA"}]',
+      },
+    })) as CallToolResult;
+    expect(result.isError).toBe(true);
+    const sc = result.structuredContent as Record<string, unknown>;
+    expect(sc.code).toBe('VERIFY_FAILED');
+    expect(String(sc.message)).toMatch(/Ed25519/);
+  });
+});

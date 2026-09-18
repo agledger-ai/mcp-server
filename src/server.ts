@@ -16,6 +16,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import {
   verifyAuditExport,
+  type AgentPublicKeyJwk,
   type FailureCode,
   type OutOfBandKeyEntry,
   type RecordAuditExportInput,
@@ -310,6 +311,7 @@ const EXPORT_FAILURE_CODES = [
   'CHAIN_KEY_NOT_YET_ACTIVE',
   'CHAIN_ALG_MISMATCH',
   'CHAIN_SIGNING_KEY_DRIFT',
+  'CHAIN_AGENT_SIGNATURE_INVALID',
   'CHAIN_UNSUPPORTED_ALGORITHM',
   'UNSUPPORTED_FORMAT',
   'CHAIN_EMPTY',
@@ -373,6 +375,15 @@ const VERIFY_ARGS = {
         'GET /v1/verification-keys response envelope (\'{"data":[...], ...}\'); the ' +
         '.data array is unwrapped automatically, so the agledger_api response can be ' +
         'passed straight through). Merged over any keys embedded in the export.',
+    ),
+  agentKeys: jsonStringField
+    .optional()
+    .describe(
+      'Optional Ed25519 public keys of agent certs, as a JSON-encoded array of JWKs ' +
+        '\'[{"kty":"OKP","crv":"Ed25519","x":"..."}]\' (the publicKeyJwk each agent sent at cert exchange, also the cnf.jwk claim in its certJws). ' +
+        'An entry whose sealed agent signature names one of these keys by thumbprint has that ' +
+        'signature re-verified offline, and fails CHAIN_AGENT_SIGNATURE_INVALID if it does not verify. ' +
+        'Without it, agent signatures are counted in result.agentSignatures but not checked.',
     ),
   requireKeyId: z
     .string()
@@ -697,7 +708,13 @@ export class AgledgerMcpServer {
         const refused = unknownArgumentResult('agledger_verify', VERIFY_ARGS, args);
         if (refused) return refused;
         try {
-          const { export: exportRaw, publicKeys: publicKeysRaw, requireKeyId, requireOutOfBandKeys } = args;
+          const {
+            export: exportRaw,
+            publicKeys: publicKeysRaw,
+            agentKeys: agentKeysRaw,
+            requireKeyId,
+            requireOutOfBandKeys,
+          } = args;
 
           const decodedExport = parseJsonObject(exportRaw, 'export');
           if (!decodedExport.ok) return decodedExport.error;
@@ -717,8 +734,23 @@ export class AgledgerMcpServer {
             publicKeys = unwrapVerificationKeys(decodedKeys.value);
           }
 
+          let agentKeys: AgentPublicKeyJwk[] | undefined;
+          if (agentKeysRaw !== undefined && agentKeysRaw !== '') {
+            const decodedAgentKeys = parseJsonObjectOrArray(agentKeysRaw, 'agentKeys');
+            if (!decodedAgentKeys.ok) return decodedAgentKeys.error;
+            if (!Array.isArray(decodedAgentKeys.value)) {
+              return errorResult(
+                'Argument `agentKeys` must decode to a JSON array of Ed25519 JWKs.',
+                'INVALID_JSON',
+                'Pass `agentKeys` as \'[{"kty":"OKP","crv":"Ed25519","x":"..."}]\'.',
+              );
+            }
+            agentKeys = decodedAgentKeys.value as AgentPublicKeyJwk[];
+          }
+
           const result = verifyAuditExport(exportData as unknown as RecordAuditExportInput, {
             publicKeys,
+            agentKeys,
             requireKeyId,
             requireOutOfBandKeys,
           });
