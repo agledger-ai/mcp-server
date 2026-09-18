@@ -5,6 +5,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { AgledgerMcpServer, SERVER_VERSION } from './server.js';
 import { resolveZodCopies, zodSplitWarning } from './zod-integrity.js';
 import { OIDC_ENV, oidcTokenFromCommand, oidcTokenFromFile, type OidcCertCredentialOptions } from './credentials.js';
+import { ON_BEHALF_OF_ENV, type DelegationSourceOptions } from './delegation.js';
 
 /**
  * Exit codes. A launcher that supervises this process, or a shell wrapping it,
@@ -76,6 +77,15 @@ request bodies. Nothing is written to disk.
                              so a rotated Kubernetes projected token is picked
                              up.
   AGLEDGER_OIDC_AGENT_ID     Optional agent id to bind the cert to.
+
+Delegation (optional): when the agent acts for a person or another party, an
+RFC 8693 token-exchange result token is sent as AGLedger-On-Behalf-Of on every
+POST. It comes from the process, never from a tool argument.
+  AGLEDGER_ON_BEHALF_OF_CMD  Shell command whose stdout is the token. Wins over
+                             the file.
+  AGLEDGER_ON_BEHALF_OF_FILE File holding the token.
+  Either is read again once the token's exp has passed, or when the Server
+  refuses the delegation with a 401.
 
 Tools:
   agledger_discover   Returns API health, your identity, and available scopes
@@ -151,7 +161,31 @@ Exit codes: 0 clean, 1 runtime failure, 2 usage or configuration error.
     process.exit(EXIT_USAGE_ERROR);
   }
 
-  const server = new AgledgerMcpServer(apiKey ? { apiKey, apiUrl } : { oidc, apiUrl });
+  const oboCmd = process.env[ON_BEHALF_OF_ENV.CMD] || undefined;
+  const oboFile = process.env[ON_BEHALF_OF_ENV.FILE] || undefined;
+  let onBehalfOf: DelegationSourceOptions | undefined;
+  if (oboCmd) {
+    if (oboFile) {
+      process.stderr.write(
+        `Note: ${ON_BEHALF_OF_ENV.FILE} is set but not used: ${ON_BEHALF_OF_ENV.CMD} takes precedence.\n`,
+      );
+    }
+    onBehalfOf = { getToken: oidcTokenFromCommand(oboCmd, ON_BEHALF_OF_ENV.CMD), origin: ON_BEHALF_OF_ENV.CMD };
+  } else if (oboFile) {
+    try {
+      accessSync(oboFile, fsConstants.R_OK);
+    } catch {
+      process.stderr.write(`Error: ${ON_BEHALF_OF_ENV.FILE} names a file that cannot be read: ${oboFile}\n`);
+      process.exit(EXIT_USAGE_ERROR);
+    }
+    onBehalfOf = { getToken: oidcTokenFromFile(oboFile, ON_BEHALF_OF_ENV.FILE), origin: ON_BEHALF_OF_ENV.FILE };
+  }
+
+  const server = new AgledgerMcpServer({
+    ...(apiKey ? { apiKey } : { oidc }),
+    apiUrl,
+    ...(onBehalfOf ? { onBehalfOf } : {}),
+  });
 
   // A version-skewed zod resolution strips every argument description and the
   // type of every JSON-string argument out of the published tool contract, and
@@ -177,3 +211,4 @@ main();
 export { AgledgerMcpServer } from './server.js';
 export type { AgledgerMcpServerOptions } from './server.js';
 export type { OidcCertCredentialOptions, OidcTokenGetter } from './credentials.js';
+export type { DelegationSourceOptions } from './delegation.js';

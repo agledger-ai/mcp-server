@@ -48,13 +48,23 @@ export function redactTokens(text: string): string {
  * offending input back, which on the exchange route is the OIDC token.
  */
 export function scrub(value: unknown, secret?: string): unknown {
-  if (typeof value === 'string') {
-    const cut = secret ? value.split(secret).join(REDACTED) : value;
-    return redactTokens(cut);
-  }
-  if (Array.isArray(value)) return value.map((v) => scrub(v, secret));
+  return mapStrings(value, (v) => redactTokens(secret ? v.split(secret).join(REDACTED) : v));
+}
+
+/**
+ * Deep-copy a JSON value with every occurrence of `secret` cut out, and
+ * nothing else touched. For API responses, which may legitimately carry other
+ * JWT-shaped values (an agent can call the exchange route itself).
+ */
+export function cutSecret(value: unknown, secret: string): unknown {
+  return mapStrings(value, (v) => (v.includes(secret) ? v.split(secret).join(REDACTED) : v));
+}
+
+function mapStrings(value: unknown, f: (v: string) => string): unknown {
+  if (typeof value === 'string') return f(value);
+  if (Array.isArray(value)) return value.map((v) => mapStrings(v, f));
   if (value !== null && typeof value === 'object') {
-    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, scrub(v, secret)]));
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, mapStrings(v, f)]));
   }
   return value;
 }
@@ -142,8 +152,11 @@ export function oidcTokenFromCommand(command: string, origin: string = OIDC_ENV.
     });
 }
 
-/** Validate a token's shape and read its unverified `sub` and `jti`. The Server verifies the signature. */
-function claimsOf(token: string, origin: string): { sub: string; jti: string | undefined } {
+/**
+ * Validate a compact JWT's shape and return its unverified payload. The Server
+ * verifies the signature. Errors never quote the token.
+ */
+export function jwtPayloadOf(token: string, origin: string): Record<string, unknown> {
   const parts = token.split('.');
   if (parts.length !== 3 || parts.some((p, i) => i < 2 && p.length === 0)) {
     throw new OidcTokenSourceError(
@@ -156,7 +169,15 @@ function claimsOf(token: string, origin: string): { sub: string; jti: string | u
   } catch {
     throw new OidcTokenSourceError(`${origin}: the token's payload segment is not base64url JSON.`);
   }
-  const { sub, jti } = (payload ?? {}) as { sub?: unknown; jti?: unknown };
+  if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new OidcTokenSourceError(`${origin}: the token's payload is not a JSON object.`);
+  }
+  return payload as Record<string, unknown>;
+}
+
+/** Read a token's unverified `sub` and `jti`. */
+function claimsOf(token: string, origin: string): { sub: string; jti: string | undefined } {
+  const { sub, jti } = jwtPayloadOf(token, origin) as { sub?: unknown; jti?: unknown };
   if (typeof sub !== 'string' || sub.length === 0) {
     throw new OidcTokenSourceError(`${origin}: the token carries no \`sub\` claim, so it cannot be exchanged.`);
   }
