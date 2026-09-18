@@ -17,7 +17,7 @@
  * they are surfaced, because either can echo a token back.
  */
 
-import { exec } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash, generateKeyPairSync, sign, type KeyObject } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 
@@ -33,6 +33,7 @@ const POP_CONTEXT = 'agledger.oidc.cert.v1\n';
 const AGENT_SIG_CONTEXT = 'agledger.agent.sig.v1\n';
 const COMMAND_TIMEOUT_MS = 60_000;
 const STDERR_LIMIT = 1_000;
+const MAX_STDOUT_BYTES = 64 * 1024;
 /** A compact JWS: three base64url segments, the first a JSON header (`eyJ`). */
 const JWT_PATTERN = /eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*/g;
 const REDACTED = '<redacted-token>';
@@ -120,35 +121,102 @@ export function oidcTokenFromFile(path: string, origin: string = OIDC_ENV.TOKEN_
   };
 }
 
+export interface TokenCommandOptions {
+  /** Kill the command after this long. Default 60s. */
+  timeoutMs?: number;
+  /** Refuse more stdout than this. Default 64 KiB; a JWT is a few KiB at most. */
+  maxStdoutBytes?: number;
+}
+
+/**
+ * Kill the command's whole process group. The shell is only the group
+ * leader: in `a | b`, or a helper that forks, killing the shell alone leaves
+ * the children running, and in a long-running server a hung refresh would
+ * leave another set behind every time.
+ */
+function killTree(pid: number | undefined): void {
+  if (pid === undefined) return;
+  try {
+    if (process.platform === 'win32') {
+      spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
+    } else {
+      process.kill(-pid, 'SIGKILL');
+    }
+  } catch {
+    // Already gone.
+  }
+}
+
 /**
  * Runs a shell command on every call; its stdout is the token. The command
- * text is never echoed back, since it can carry a secret of its own.
+ * runs in its own process group, which is killed on timeout, on oversized
+ * output, and after it exits, so nothing it started outlives the call. The
+ * command text is never echoed back, since it can carry a secret of its own.
  */
-export function oidcTokenFromCommand(command: string, origin: string = OIDC_ENV.TOKEN_CMD): OidcTokenGetter {
+export function oidcTokenFromCommand(
+  command: string,
+  origin: string = OIDC_ENV.TOKEN_CMD,
+  options: TokenCommandOptions = {},
+): OidcTokenGetter {
+  const timeoutMs = options.timeoutMs ?? COMMAND_TIMEOUT_MS;
+  const maxStdout = options.maxStdoutBytes ?? MAX_STDOUT_BYTES;
   return () =>
     new Promise((resolve, reject) => {
-      exec(
-        command,
-        { timeout: COMMAND_TIMEOUT_MS, maxBuffer: 1024 * 1024, windowsHide: true },
-        (err, stdout, stderr) => {
-          if (!err) {
-            resolve(stdout);
-            return;
-          }
-          const detail = redactTokens(String(stderr).trim()).slice(0, STDERR_LIMIT);
-          const e = err as { killed?: boolean; code?: unknown; signal?: unknown };
-          const how = e.killed
-            ? `did not finish within ${COMMAND_TIMEOUT_MS / 1000}s`
-            : typeof e.code === 'number'
-              ? `exited ${e.code}`
-              : `failed to run${typeof e.signal === 'string' ? ` (${e.signal})` : ''}`;
-          reject(
-            new OidcTokenSourceError(
-              `${origin}: the token command ${how}${detail ? `. stderr: ${detail}` : ' with no stderr output.'}`,
-            ),
-          );
-        },
-      );
+      let child: ChildProcess;
+      try {
+        child = spawn(command, {
+          shell: true,
+          // Its own process group on POSIX, so the group can be killed whole.
+          detached: process.platform !== 'win32',
+          stdio: ['ignore', 'pipe', 'pipe'],
+          windowsHide: true,
+        });
+      } catch (err) {
+        reject(new OidcTokenSourceError(`${origin}: could not run the token command: ${err instanceof Error ? err.message : String(err)}`));
+        return;
+      }
+      const out: Buffer[] = [];
+      let outBytes = 0;
+      let stderr = '';
+      let settled = false;
+      const fail = (message: string) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        killTree(child.pid);
+        reject(new OidcTokenSourceError(`${origin}: ${message}`));
+      };
+      const timer = setTimeout(() => fail(`the token command did not finish within ${timeoutMs / 1000}s and was killed.`), timeoutMs);
+      child.stdout!.on('data', (d: Buffer) => {
+        outBytes += d.length;
+        if (outBytes > maxStdout) {
+          fail(`the token command printed more than ${maxStdout} bytes, which is not a token; it was killed.`);
+          return;
+        }
+        out.push(d);
+      });
+      child.stderr!.setEncoding('utf8').on('data', (d: string) => {
+        if (stderr.length < STDERR_LIMIT * 2) stderr += d;
+      });
+      child.on('error', (err) => fail(`could not run the token command: ${err.message}`));
+      child.on('close', (code, signal) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        // Anything it left running in the background goes with it.
+        killTree(child.pid);
+        if (code === 0) {
+          resolve(Buffer.concat(out).toString('utf8'));
+          return;
+        }
+        const detail = redactTokens(stderr.trim()).slice(0, STDERR_LIMIT);
+        const how = signal ? `was killed by ${signal}` : `exited ${code}`;
+        reject(
+          new OidcTokenSourceError(
+            `${origin}: the token command ${how}${detail ? `. stderr: ${detail}` : ' with no stderr output.'}`,
+          ),
+        );
+      });
     });
 }
 
