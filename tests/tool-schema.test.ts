@@ -68,6 +68,33 @@ describe('published tool schemas', () => {
     }
   });
 
+  it('publishes no additionalProperties keyword on any tool', () => {
+    // The tools refuse undeclared arguments in the handler, which needs a loose
+    // object so the stray key reaches it. A loose object would publish
+    // `additionalProperties: {}`; the keyword is dropped so the document stays
+    // what it was, and Gemini's function-call grammar rejects it anyway.
+    for (const name of Object.keys(REQUIRED)) {
+      expect(schemaFor(name)).not.toHaveProperty('additionalProperties');
+    }
+  });
+
+  it('publishes a description on every argument of every tool', () => {
+    for (const name of Object.keys(REQUIRED)) {
+      const props = schemaFor(name).properties ?? {};
+      for (const [arg, schema] of Object.entries(props)) {
+        expect((schema as { description?: string }).description, `${name}.${arg}`).toBeTruthy();
+      }
+    }
+    expect(Object.keys(schemaFor('agledger_api').properties ?? {})).toEqual([
+      'method',
+      'path',
+      'params',
+      'idempotencyKey',
+    ]);
+    expect(schemaFor('agledger_api').properties?.params).toMatchObject({ type: 'string' });
+    expect(schemaFor('agledger_api').properties?.params).not.toHaveProperty('anyOf');
+  });
+
   it('still accepts a native object where a JSON string is declared', async () => {
     // The reason the field is wrapped at all: object-native runtimes pass the
     // export as an object rather than a string. Rejecting it at validation
