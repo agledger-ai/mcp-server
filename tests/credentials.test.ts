@@ -1,4 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
+import { execFileSync } from 'node:child_process';
 import { createHash, createPublicKey, verify } from 'node:crypto';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -498,5 +499,46 @@ describe('a token source that has not rotated', () => {
     await client.request('GET', '/x');
     expect(server.exchanges).toHaveLength(2);
     expect(exchangeBody(server.exchanges[1]!).oidcToken).toBe(jwt('no-id'));
+  });
+});
+
+describe('token command process hygiene', () => {
+  const alive = (marker: string) => {
+    try {
+      return execFileSync('pgrep', ['-f', marker], { encoding: 'utf8' }).trim().length > 0;
+    } catch {
+      return false; // pgrep exits 1 when nothing matches
+    }
+  };
+  const settle = () => new Promise((r) => setTimeout(r, 300));
+
+  it.skipIf(process.platform === 'win32')('kills the whole pipeline on timeout, leaving no child behind', async () => {
+    const marker = `31${process.pid}7`;
+    const get = oidcTokenFromCommand(`sleep ${marker} | cat`, 'AGLEDGER_OIDC_TOKEN_CMD', { timeoutMs: 300 });
+    const err = (await Promise.resolve(get()).catch((e: unknown) => e)) as Error;
+    expect(err).toBeInstanceOf(OidcTokenSourceError);
+    expect(err.message).toBe('AGLEDGER_OIDC_TOKEN_CMD: the token command did not finish within 0.3s and was killed.');
+    await settle();
+    expect(alive(`sleep ${marker}`)).toBe(false);
+  });
+
+  it.skipIf(process.platform === 'win32')('reaps a background child the command left running after it exited', async () => {
+    const marker = `32${process.pid}7`;
+    const token = jwt('bg', 1);
+    const get = oidcTokenFromCommand(`sleep ${marker} >/dev/null 2>&1 & printf '%s' '${token}'`);
+    expect(await get()).toBe(token);
+    await settle();
+    expect(alive(`sleep ${marker}`)).toBe(false);
+  });
+
+  it('refuses more stdout than the cap, and says so without echoing it', async () => {
+    const get = oidcTokenFromCommand(`head -c 70000 /dev/zero | tr '\\0' a`, 'AGLEDGER_ON_BEHALF_OF_CMD', {
+      maxStdoutBytes: 64 * 1024,
+    });
+    const err = (await Promise.resolve(get()).catch((e: unknown) => e)) as Error;
+    expect(err).toBeInstanceOf(OidcTokenSourceError);
+    expect(err.message).toBe(
+      'AGLEDGER_ON_BEHALF_OF_CMD: the token command printed more than 65536 bytes, which is not a token; it was killed.',
+    );
   });
 });
