@@ -1,6 +1,6 @@
 # @agledger/mcp-server
 
-The official [MCP](https://modelcontextprotocol.io) server for the [AGLedger](https://agledger.ai) API: change control for AI agents. A self-hosted notary that records every change an agent makes, signed and hash-chained, and gates the ones that matter.
+The official [MCP](https://modelcontextprotocol.io) server for the [AGLedger](https://agledger.ai) API: change control for AI agents. Agent memory, approvals, audit trail, and notifications: one API, one signed ledger, self-hosted.
 
 Connects any MCP-compatible AI agent (Claude, Cursor, Windsurf, etc.) to the AGLedger API with 2 universal API-pass-through tools plus an offline audit verifier. No SDK code required. Just point your agent at this server.
 
@@ -35,8 +35,10 @@ Add to your MCP client configuration (e.g. `claude_desktop_config.json`):
 }
 ```
 
-Both flags are required. AGLedger is self-hosted, so there is no default server
-to call: without `--api-url` the server exits before it accepts a connection.
+Both flags are required, unless an OIDC token source stands in for the key (see
+[below](#authenticating-with-oidc-instead-of-an-api-key)). AGLedger is
+self-hosted, so there is no default server to call: without `--api-url` the
+server exits before it accepts a connection.
 
 Or run directly:
 
@@ -47,6 +49,70 @@ agledger-mcp --api-key <key> --api-url <url>
 Exit codes: `0` clean, `1` runtime failure, `2` usage or configuration error
 (missing flag, unknown flag), so a launcher can tell a misconfiguration from a
 crash.
+
+## Authenticating with OIDC instead of an API key
+
+When the operator of your AGLedger Server has registered your identity
+provider as a trusted issuer for agents, the MCP server can run with no API key
+at all. Give it a source of OIDC tokens instead. It exchanges a token for a
+short-lived cert signed by the Server (`POST /v1/auth/oidc/cert`), presents the
+cert as its bearer, and signs each request body with an Ed25519 key that exists
+only in its own memory. The Server records that signature in the signed chain
+entry of every record the agent writes (`predicate.on_behalf_of.agent_signature`).
+Nothing is written to disk.
+
+| Env var | Description |
+|---------|-------------|
+| `AGLEDGER_OIDC_TOKEN_FILE` | A file holding an OIDC JWT, such as a Kubernetes projected service-account token. Read on every exchange, so a token rotated on disk is picked up. |
+| `AGLEDGER_OIDC_TOKEN_CMD` | A shell command whose stdout is an OIDC JWT. Run on every exchange. |
+| `AGLEDGER_OIDC_AGENT_ID` | Optional. The agent id to bind the cert to, when the issuer does not map one from the token. |
+
+An API key wins when one is set, then the command, then the file.
+
+```bash
+AGLEDGER_OIDC_TOKEN_FILE=/var/run/secrets/agledger/token \
+  agledger-mcp --api-url https://your-agledger-instance
+```
+
+In an MCP client configuration, the token source goes in `env`:
+
+```json
+{
+  "mcpServers": {
+    "agledger": {
+      "command": "agledger-mcp",
+      "args": ["--api-url", "https://your-agledger-instance"],
+      "env": { "AGLEDGER_OIDC_TOKEN_FILE": "/var/run/secrets/agledger/token" }
+    }
+  }
+}
+```
+
+The cert is re-exchanged once half its lifetime has passed, and once more if
+the Server answers 401 (a revoked cert), after which the request is retried a
+single time. A refresh that fails while the current cert is still valid keeps
+the current cert and prints one warning on stderr. When the exchange itself is
+refused, the tool result carries `code: OIDC_EXCHANGE_FAILED`, the Server's
+status and error body, and its `recoveryHint`.
+
+The Server exchanges a token id (`jti`) only once, so every exchange needs a
+new token. A command runs on every exchange; a file is read on every exchange,
+and while it still holds the token already exchanged, the server keeps using
+the current cert rather than asking. The kubelet rewrites a projected token at
+80% of `expirationSeconds`, so keep that interval shorter than the trusted
+issuer's `maxCredentialTtlSeconds`, or the cert expires before a new token
+appears:
+
+```yaml
+volumes:
+  - name: agledger-token
+    projected:
+      sources:
+        - serviceAccountToken:
+            audience: agledger
+            expirationSeconds: 600
+            path: token
+```
 
 ## Tools
 
@@ -74,18 +140,18 @@ The `agledger_discover` tool returns a quickstart workflow that guides agents th
 3. `POST /v1/records` -- create a record
 4. `POST /v1/records/{id}/completions` -- submit a completion (evidence) when done
 
-Every API error response includes a `suggestion` field with actionable recovery guidance -- agents can self-correct without human intervention.
+Every API error response includes a `recoveryHint` naming the fix, so an agent can correct itself without a human. Errors raised by the MCP server itself (an argument the tool does not declare, a timeout, a credential failure) carry a `code` and a `suggestion` instead.
 
 ## Configuration
 
 | Flag | Env Var | Description |
 |------|---------|-------------|
-| `--api-key` | `AGLEDGER_API_KEY` | AGLedger API key (required) |
+| `--api-key` | `AGLEDGER_API_KEY` | AGLedger API key. Required unless an OIDC token source is set (see above). |
 | `--api-url` | `AGLEDGER_API_URL` | API base URL of your instance (required). AGLedger is self-hosted, so there is no default; the server refuses to start without it. |
 
 ## What is AGLedger?
 
-AGLedger is the accountability layer for automated operations. It notarizes what was agreed to, by whom, and when, and tracks the delegation of that agreement through other systems.
+AGLedger is change control for AI agents, delivered as a signed ledger for agentic work. Agents notarize what they intended and what they did, principals approve the work that needs a decision, and every entry is signed, hash-chained and verifiable offline.
 
 - **Records** -- structured commitments with acceptance criteria and tolerance bands
 - **Completions** -- performer evidence recording what was reported to be done
@@ -99,7 +165,7 @@ Each self-hosted AGLedger instance also serves interactive Swagger UI at `{AGLED
 ## Requirements
 
 - Node.js >= 24
-- A running self-hosted AGLedger API instance and an API key (see the self-hosted install guide at [agledger.ai](https://www.agledger.ai))
+- A running self-hosted AGLedger API instance, and an API key or a trusted OIDC issuer (see the self-hosted install guide at [agledger.ai](https://www.agledger.ai))
 
 ## License
 
