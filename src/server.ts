@@ -126,6 +126,42 @@ function credentialErrorResult(err: unknown): CallToolResult | undefined {
   return undefined;
 }
 
+/**
+ * A tool's input schema, refusing arguments it does not declare.
+ *
+ * zod's default object strips unknown keys, so `agledger_api` called with
+ * `body` instead of `params` sent no payload at all and the agent read the
+ * Server's "body must be object" as a payload problem. The object is loose so
+ * the handler sees the stray key and can name it; `additionalProperties` is
+ * then dropped from the published schema, which is what it said before. JSON
+ * Schema reads an absent `additionalProperties` as "allowed", same as the `{}`
+ * a loose object would publish, and Gemini's function-call grammar rejects
+ * the keyword outright. `tests/tool-schema.test.ts` asserts the published
+ * document.
+ */
+function toolInput<S extends z.ZodRawShape>(shape: S) {
+  return z.looseObject(shape).meta({ additionalProperties: undefined });
+}
+
+function unknownArgumentResult(
+  tool: string,
+  shape: z.ZodRawShape,
+  args: Record<string, unknown>,
+  hint?: string,
+): CallToolResult | undefined {
+  const declared = Object.keys(shape);
+  const unknown = Object.keys(args).filter((k) => !declared.includes(k));
+  if (unknown.length === 0) return undefined;
+  const names = unknown.map((k) => `\`${k}\``).join(', ');
+  const accepted = declared.length ? declared.map((k) => `\`${k}\``).join(', ') : 'no arguments';
+  return errorResult(
+    `${tool} does not take ${unknown.length === 1 ? 'the argument' : 'the arguments'} ${names}. It accepts ${accepted}.`,
+    'UNKNOWN_ARGUMENT',
+    `${hint ? `${hint} ` : ''}Call ${tool} again with only the arguments it declares.`,
+    { unknownArguments: unknown, acceptedArguments: declared },
+  );
+}
+
 // Free-form object fields are declared as `string` on the wire so Gemini's
 // function-call grammar (a strict OpenAPI 3.0 subset that rejects
 // `additionalProperties` and properties-less OBJECT) can emit them. The
@@ -347,7 +383,7 @@ export class AgledgerMcpServer {
         description:
           'Returns API health, your identity, available scopes, and a quickstart workflow. ' +
           'Call this first. The response tells you who you are and what to do next.',
-        inputSchema: DISCOVER_ARGS,
+        inputSchema: toolInput(DISCOVER_ARGS),
         annotations: {
           readOnlyHint: true,
           destructiveHint: false,
@@ -361,7 +397,9 @@ export class AgledgerMcpServer {
         // is empty: a valid API key suffices, but no specific scope gates it.
         _meta: { requiredScopes: [] as string[] },
       },
-      async () => {
+      async (args) => {
+        const refused = unknownArgumentResult('agledger_discover', DISCOVER_ARGS, args);
+        if (refused) return refused;
         try {
           const [health, identity, scopeProfiles] = await Promise.allSettled([
             // Anonymous, so "is the Server up" stays answerable when the
@@ -432,7 +470,7 @@ export class AgledgerMcpServer {
           'For the full API catalog, GET /openapi.json (or read the agledger://openapi resource); ' +
           'for prose orientation, GET /llms.txt (or read the agledger://llms.txt resource). ' +
           'For GET/DELETE, params become query parameters. For POST/PUT/PATCH, params become the JSON body.',
-        inputSchema: API_ARGS,
+        inputSchema: toolInput(API_ARGS),
         annotations: {
           readOnlyHint: false,
           // This tool dispatches to any route, including DELETE/PATCH, so it can
@@ -451,6 +489,13 @@ export class AgledgerMcpServer {
         // scopes in the API's 403 response (missingScopes), forwarded verbatim.
       },
       async (args) => {
+        const refused = unknownArgumentResult(
+          'agledger_api',
+          API_ARGS,
+          args,
+          'The request body (POST/PUT/PATCH) and the query string (GET/DELETE) both go in `params`.',
+        );
+        if (refused) return refused;
         try {
           const { method, path, params, idempotencyKey } = args;
 
@@ -566,7 +611,7 @@ export class AgledgerMcpServer {
           'key\'s algorithm; upgrade, never a pass), CHAIN_POSITION_GAP, CHAIN_MALFORMED_ENTRY, ' +
           'UNSUPPORTED_FORMAT, CHAIN_EMPTY). Obtain the export via agledger_api with method=GET, path=/v1/records/{id}/audit-export. ' +
           'For the raw COSE_Sign1 stream, use path=/v1/records/{id}/attestation.',
-        inputSchema: VERIFY_ARGS,
+        inputSchema: toolInput(VERIFY_ARGS),
         annotations: {
           readOnlyHint: true,
           destructiveHint: false,
@@ -579,6 +624,8 @@ export class AgledgerMcpServer {
         _meta: { requiredScopes: [] as string[] },
       },
       async (args) => {
+        const refused = unknownArgumentResult('agledger_verify', VERIFY_ARGS, args);
+        if (refused) return refused;
         try {
           const { export: exportRaw, publicKeys: publicKeysRaw, requireKeyId, requireOutOfBandKeys } = args;
 
