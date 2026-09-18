@@ -1,4 +1,7 @@
+import { ApiKeyCredential, type Credential } from './credentials.js';
 import { SERVER_VERSION } from './version.js';
+
+const USER_AGENT = `agledger-mcp-server/${SERVER_VERSION}`;
 
 export interface ApiResponse {
   status: number;
@@ -50,32 +53,33 @@ function appendQueryParam(search: URLSearchParams, key: string, value: unknown):
   search.set(key, String(value));
 }
 
+export interface RequestOptions {
+  query?: Record<string, unknown>;
+  body?: unknown;
+  idempotencyKey?: string;
+  /** Send no credential. For public routes whose answer must not depend on the credential working (`/health`). */
+  anonymous?: boolean;
+}
+
 export class ApiClient {
   private readonly apiUrl: string;
-  private readonly apiKey: string;
+  private readonly credential: Credential;
   private readonly timeoutMs: number;
 
-  constructor(apiUrl: string, apiKey: string, timeoutMs = 30_000) {
+  /** `credential` is an API key string or a {@link Credential} (e.g. an OIDC cert credential). */
+  constructor(apiUrl: string, credential: string | Credential, timeoutMs = 30_000) {
     this.apiUrl = stripTrailingSlashes(apiUrl);
-    this.apiKey = apiKey;
+    this.credential = typeof credential === 'string' ? new ApiKeyCredential(credential) : credential;
     this.timeoutMs = timeoutMs;
   }
 
-  async request(
-    method: string,
-    path: string,
-    options?: {
-      query?: Record<string, unknown>;
-      body?: unknown;
-      idempotencyKey?: string;
-    },
-  ): Promise<ApiResponse> {
+  async request(method: string, path: string, options?: RequestOptions): Promise<ApiResponse> {
     const url = new URL(path, this.apiUrl);
 
     // Defense-in-depth: pin every request to the configured API origin. A
     // protocol-relative or absolute `path` (e.g. `//evil.com/x`,
     // `https://evil.com`) resolves against the base to a different origin, which
-    // would leak the `Authorization: Bearer <apiKey>` header off-host. No caller
+    // would leak the `Authorization: Bearer` header off-host. No caller
     // may steer the client off-origin.
     if (url.origin !== new URL(this.apiUrl).origin) {
       throw new Error(
@@ -92,12 +96,14 @@ export class ApiClient {
     }
 
     const headers: Record<string, string> = {
-      Authorization: `Bearer ${this.apiKey}`,
       Accept: 'application/json',
-      'User-Agent': `agledger-mcp-server/${SERVER_VERSION}`,
+      'User-Agent': USER_AGENT,
     };
 
-    if (options?.body !== undefined) {
+    // Serialized once. The agent signature covers these exact bytes, and a
+    // 401 retry resends them, so the body must never be re-stringified.
+    const body = options?.body !== undefined ? JSON.stringify(options.body) : undefined;
+    if (body !== undefined) {
       headers['Content-Type'] = 'application/json';
     }
 
@@ -105,11 +111,50 @@ export class ApiClient {
     // declare `idempotent: true` are POST, and on any other method the header is
     // ignored. A generated key makes each write replay-safe by default. An agent
     // that retries a tool call after a timeout passes the key it used the first
-    // time, so the retry dedups instead of notarizing the same work twice.
+    // time, so the retry dedups instead of notarizing the same work twice. The
+    // 401 retry below reuses the same key for the same reason.
     if (method.toUpperCase() === 'POST') {
       headers['Idempotency-Key'] = options?.idempotencyKey ?? crypto.randomUUID();
     }
 
+    if (options?.anonymous) {
+      return this.send(url, method, headers, body);
+    }
+
+    // A cert credential signs the body with the key bound to its cert. The
+    // Server records the signature in the chain entry on the routes that
+    // accept one and ignores the headers elsewhere.
+    if (body !== undefined && this.credential.signBody) {
+      Object.assign(headers, this.credential.signBody(body));
+    }
+
+    const ctx = { postAnonymous: (p: string, b: unknown) => this.postAnonymous(p, b) };
+    const bearer = await this.credential.bearer(ctx);
+    const first = await this.send(url, method, { ...headers, Authorization: `Bearer ${bearer}` }, body);
+    if (first.status !== 401 || !this.credential.renewable) return first;
+
+    // A cert can be revoked or expire server-side before our clock says so.
+    // Exactly one re-exchange and one retry; a second 401 is the answer.
+    const renewed = await this.credential.bearer({ ...ctx, rejected: bearer });
+    return this.send(url, method, { ...headers, Authorization: `Bearer ${renewed}` }, body);
+  }
+
+  private async postAnonymous(path: string, payload: unknown): Promise<{ status: number; body: unknown }> {
+    const res = await this.send(
+      new URL(path, this.apiUrl),
+      'POST',
+      { Accept: 'application/json', 'Content-Type': 'application/json', 'User-Agent': USER_AGENT },
+      JSON.stringify(payload),
+    );
+    return { status: res.status, body: res.body };
+  }
+
+  private async send(
+    url: URL,
+    method: string,
+    headers: Record<string, string>,
+    body: string | undefined,
+  ): Promise<ApiResponse> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
 
@@ -117,21 +162,21 @@ export class ApiClient {
       const res = await fetch(url.toString(), {
         method,
         headers,
-        body: options?.body !== undefined ? JSON.stringify(options.body) : undefined,
+        body,
         signal: controller.signal,
       });
 
       const contentType = res.headers.get('content-type') ?? '';
-      let body: unknown;
+      let parsed: unknown;
 
       if (contentType.includes('json')) {
-        body = await res.json();
+        parsed = await res.json();
       } else {
         const text = await res.text();
-        body = { _raw: text, _contentType: contentType };
+        parsed = { _raw: text, _contentType: contentType };
       }
 
-      return { status: res.status, body, ok: res.ok };
+      return { status: res.status, body: parsed, ok: res.ok };
     } finally {
       clearTimeout(timeout);
     }

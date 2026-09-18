@@ -1,8 +1,10 @@
 #!/usr/bin/env node
+import { accessSync, constants as fsConstants } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { AgledgerMcpServer, SERVER_VERSION } from './server.js';
 import { resolveZodCopies, zodSplitWarning } from './zod-integrity.js';
+import { OIDC_ENV, oidcTokenFromCommand, oidcTokenFromFile, type OidcCertCredentialOptions } from './credentials.js';
 
 /**
  * Exit codes. A launcher that supervises this process, or a shell wrapping it,
@@ -54,13 +56,26 @@ function main(): void {
       `AGLedger MCP Server v${SERVER_VERSION}
 
 Usage: agledger-mcp --api-key <key> --api-url <url>
+       AGLEDGER_OIDC_TOKEN_FILE=<path> agledger-mcp --api-url <url>
 
 Options:
-  --api-key, -k     AGLedger API key (or AGLEDGER_API_KEY env var). Required.
+  --api-key, -k     AGLedger API key (or AGLEDGER_API_KEY env var).
   --api-url, -u     Base URL of your AGLedger instance (or AGLEDGER_API_URL env
                     var). Required: AGLedger is self-hosted, so there is no
                     default server to call.
   --help, -h        Show this help message
+
+Credentials: one is required. An API key wins when set; otherwise an OIDC
+token source is exchanged for a short-lived cert (POST /v1/auth/oidc/cert),
+re-exchanged at half its lifetime and on a 401, and the cert's key signs
+request bodies. Nothing is written to disk.
+  AGLEDGER_API_KEY           API key (same as --api-key)
+  AGLEDGER_OIDC_TOKEN_CMD    Shell command whose stdout is an OIDC JWT; run on
+                             every exchange. Wins over the token file.
+  AGLEDGER_OIDC_TOKEN_FILE   File holding an OIDC JWT; read on every exchange,
+                             so a rotated Kubernetes projected token is picked
+                             up.
+  AGLEDGER_OIDC_AGENT_ID     Optional agent id to bind the cert to.
 
 Tools:
   agledger_discover   Returns API health, your identity, and available scopes
@@ -73,14 +88,54 @@ Exit codes: 0 clean, 1 runtime failure, 2 usage or configuration error.
     process.exit(0);
   }
 
-  const apiKey = values['api-key'] ?? process.env.AGLEDGER_API_KEY;
+  const apiKey = values['api-key'] || process.env.AGLEDGER_API_KEY || undefined;
   const apiUrl = values['api-url'] ?? process.env.AGLEDGER_API_URL;
+  const tokenCmd = process.env[OIDC_ENV.TOKEN_CMD] || undefined;
+  const tokenFile = process.env[OIDC_ENV.TOKEN_FILE] || undefined;
+  const agentId = process.env[OIDC_ENV.AGENT_ID] || undefined;
 
-  if (!apiKey) {
+  if (!apiKey && !tokenCmd && !tokenFile) {
     process.stderr.write(
-      'Error: --api-key or AGLEDGER_API_KEY environment variable is required.\n',
+      'Error: no credential configured. Set one of:\n' +
+        '  --api-key <key> or AGLEDGER_API_KEY    an AGLedger API key\n' +
+        `  ${OIDC_ENV.TOKEN_CMD}                a shell command that prints an OIDC JWT\n` +
+        `  ${OIDC_ENV.TOKEN_FILE}               a file holding an OIDC JWT (e.g. a projected token)\n` +
+        'Run `agledger-mcp --help` for details.\n',
     );
     process.exit(EXIT_USAGE_ERROR);
+  }
+
+  // Precedence: API key, then command, then file. Say which one lost, so a
+  // leftover variable is not silently ignored.
+  const ignored = [
+    apiKey && tokenCmd ? OIDC_ENV.TOKEN_CMD : undefined,
+    (apiKey || tokenCmd) && tokenFile ? OIDC_ENV.TOKEN_FILE : undefined,
+  ].filter(Boolean);
+  if (ignored.length) {
+    process.stderr.write(
+      `Note: ${ignored.join(' and ')} ${ignored.length === 1 ? 'is' : 'are'} set but not used: ` +
+        `${apiKey ? 'the API key' : OIDC_ENV.TOKEN_CMD} takes precedence.\n`,
+    );
+  }
+
+  let oidc: OidcCertCredentialOptions | undefined;
+  if (!apiKey) {
+    if (!tokenCmd && tokenFile) {
+      // Caught here rather than on the first tool call: a wrong path is a
+      // configuration error, and the MCP client may not call a tool for hours.
+      try {
+        accessSync(tokenFile, fsConstants.R_OK);
+      } catch {
+        process.stderr.write(`Error: ${OIDC_ENV.TOKEN_FILE} names a file that cannot be read: ${tokenFile}\n`);
+        process.exit(EXIT_USAGE_ERROR);
+      }
+    }
+    oidc = {
+      getOidcToken: tokenCmd ? oidcTokenFromCommand(tokenCmd) : oidcTokenFromFile(tokenFile!),
+      origin: tokenCmd ? OIDC_ENV.TOKEN_CMD : OIDC_ENV.TOKEN_FILE,
+      ...(agentId ? { agentId } : {}),
+      onWarning: (message) => process.stderr.write(`Warning: ${message}\n`),
+    };
   }
 
   // Checked here, alongside the key, rather than left to throw out of the
@@ -96,7 +151,7 @@ Exit codes: 0 clean, 1 runtime failure, 2 usage or configuration error.
     process.exit(EXIT_USAGE_ERROR);
   }
 
-  const server = new AgledgerMcpServer({ apiKey, apiUrl });
+  const server = new AgledgerMcpServer(apiKey ? { apiKey, apiUrl } : { oidc, apiUrl });
 
   // A version-skewed zod resolution strips every argument description and the
   // type of every JSON-string argument out of the published tool contract, and
@@ -121,3 +176,4 @@ main();
 
 export { AgledgerMcpServer } from './server.js';
 export type { AgledgerMcpServerOptions } from './server.js';
+export type { OidcCertCredentialOptions, OidcTokenGetter } from './credentials.js';
