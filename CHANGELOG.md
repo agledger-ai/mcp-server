@@ -4,10 +4,11 @@ All notable changes to the AGLedger MCP Server will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [2.11.0] - 2026-09-18
+## [2.11.0] - 2026-09-21
 
 ### Added
 
+- **`agledger_verify` refuses a re-attributed export.** The `actorId`, `actorRole` and `actorOwnerId` an export displays are signature-covered, and they are now cross-checked against the signed actor claim, so an export re-attributed to another actor fails with the new `CHAIN_ACTOR_ATTRIBUTION_MISMATCH` instead of verifying. Requires `@agledger/verify-core` 1.5.0.
 - **The server can authenticate with an OIDC token instead of an API key** (#30). Set `AGLEDGER_OIDC_TOKEN_FILE` (a file holding the token, such as a Kubernetes projected service-account token) or `AGLEDGER_OIDC_TOKEN_CMD` (a shell command that prints one), plus `AGLEDGER_OIDC_AGENT_ID` if the cert should bind to a specific agent. The server generates an Ed25519 key pair in memory, exchanges the token for a short-lived cert signed by the Server (`POST /v1/auth/oidc/cert`) and presents the cert as its bearer. No long-lived secret sits in the MCP client configuration, and nothing is written to disk. An API key still wins when one is set, then the command, then the file; the server prints a note naming any source it ignores.
 
   - The token source is consulted on every exchange: the file is re-read and the command re-run, because the Server exchanges a given token id (`jti`) only once and a projected token is rotated on disk under a running process. A file that still holds the token already exchanged is recognised locally and not sent, so an unrotated file costs no request and no warning while the current cert is valid, and produces an error naming the rotation interval once the cert has expired.
