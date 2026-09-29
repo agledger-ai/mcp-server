@@ -284,7 +284,11 @@ export class ApiKeyCredential implements Credential {
 export interface OidcCertCredentialOptions {
   /** Returns a fresh OIDC JWT. Called once per exchange, never cached. */
   getOidcToken: OidcTokenGetter;
-  /** Optional agent binding sent on the exchange (a UUID in the issuer's org). */
+  /**
+   * Optional assertion of the agent the token binds to, sent on the exchange.
+   * The token decides the agent; the Server refuses a mismatch with 403
+   * CERT_AGENT_BINDING_MISMATCH rather than bind a different one.
+   */
   agentId?: string;
   /** Re-exchange once this fraction of the cert's lifetime has passed. Default 0.5. */
   refreshFraction?: number;
