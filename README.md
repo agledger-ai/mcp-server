@@ -65,9 +65,20 @@ Nothing is written to disk.
 |---------|-------------|
 | `AGLEDGER_OIDC_TOKEN_FILE` | A file holding an OIDC JWT, such as a Kubernetes projected service-account token. Read on every exchange, so a token rotated on disk is picked up. |
 | `AGLEDGER_OIDC_TOKEN_CMD` | A shell command whose stdout is an OIDC JWT. Run on every exchange. |
-| `AGLEDGER_OIDC_AGENT_ID` | Optional. The agent id to bind the cert to, when the issuer does not map one from the token. |
+| `AGLEDGER_OIDC_AGENT_ID` | Optional. An assertion of the agent id the token binds to, sent on the exchange. It never chooses the agent: when it names a different one, or the token binds none, the Server refuses the exchange with 403 `CERT_AGENT_BINDING_MISMATCH` rather than issue a cert for an agent you did not expect. Leave it unset unless you want that check. |
 
 An API key wins when one is set, then the command, then the file.
+
+**The token decides which agent the cert binds to**, never the MCP server's
+configuration. An administrator binds an agent to the token's identity in one
+of two ways: `PATCH /v1/agents/{id}` with `oidcIss` and `oidcSub` (the token's
+issuer and subject), or a `claimMapping` of `agent_id` on the trusted issuer,
+which reads the agent id from a claim in the token. An issuer that
+auto-provisions agents creates one for an unbound subject instead. A token that
+binds no agent is refused, and the Server's `recoveryHint` says which binding is
+missing. A token bound to a federation shadow agent (one listed at
+`GET /v1/peer-agents`) is refused with 403 `SHADOW_AGENT_CERT_FORBIDDEN`: that
+agent authenticates on its own Server.
 
 ```bash
 AGLEDGER_OIDC_TOKEN_FILE=/var/run/secrets/agledger/token \
@@ -93,7 +104,7 @@ the Server answers 401 (a revoked cert), after which the request is retried a
 single time. A refresh that fails while the current cert is still valid keeps
 the current cert and prints one warning on stderr. When the exchange itself is
 refused, the tool result carries `code: OIDC_EXCHANGE_FAILED`, the Server's
-status and error body, and its `recoveryHint`.
+status and error body, and its `recoveryHint` as the result's `suggestion`.
 
 The Server exchanges a token id (`jti`) only once, so every exchange needs a
 new token. A command runs on every exchange; a file is read on every exchange,

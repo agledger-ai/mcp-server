@@ -76,7 +76,13 @@ request bodies. Nothing is written to disk.
   AGLEDGER_OIDC_TOKEN_FILE   File holding an OIDC JWT; read on every exchange,
                              so a rotated Kubernetes projected token is picked
                              up.
-  AGLEDGER_OIDC_AGENT_ID     Optional agent id to bind the cert to.
+  AGLEDGER_OIDC_AGENT_ID     Optional assertion of the agent id the token
+                             binds to. The token decides the agent; a
+                             different id, or any id on a token bound to
+                             no agent, is 403 CERT_AGENT_BINDING_MISMATCH.
+                             Bind an agent with PATCH /v1/agents/{id}
+                             (oidcIss, oidcSub) or claimMapping.agent_id
+                             on the trusted issuer.
 
 Delegation (optional): when the agent acts for a person or another party, an
 RFC 8693 token-exchange result token is sent as AGLedger-On-Behalf-Of on every

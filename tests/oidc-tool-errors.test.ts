@@ -61,6 +61,56 @@ describe('OIDC credential errors reach the tool result', () => {
     }
   });
 
+  it('an asserted agent the token does not bind is a 403 CERT_AGENT_BINDING_MISMATCH whose recoveryHint reaches the tool result', async () => {
+    const recoveryHint =
+      'Bind the agent to this identity, then retry with agentId omitted (or equal to that agent). ' +
+      'PATCH /v1/agents/agent-2 with { "oidcIss": "https://idp.example", "oidcSub": "<the sub in your token>" }';
+    let sentAgentId: unknown;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init: RequestInit) => {
+        if (url.endsWith('/v1/auth/oidc/cert')) {
+          sentAgentId = (JSON.parse(String(init.body)) as { agentId?: unknown }).agentId;
+          return new Response(
+            JSON.stringify({
+              type: '/problems/forbidden',
+              title: 'Forbidden',
+              status: 403,
+              detail: 'The body names agent agent-2, but this token binds to no agent.',
+              error: 'CERT_AGENT_BINDING_MISMATCH',
+              message: 'The body names agent agent-2, but this token binds to no agent.',
+              recoveryHint,
+              retryable: false,
+            }),
+            { status: 403, headers: { 'content-type': 'application/json' } },
+          );
+        }
+        return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
+      }),
+    );
+    const { client, close } = await connect({
+      apiUrl: 'https://api.test.example',
+      oidc: { getOidcToken: () => token, agentId: 'agent-2' },
+    });
+    try {
+      const result = (await client.callTool({
+        name: 'agledger_api',
+        arguments: { method: 'GET', path: '/v1/auth/me' },
+      })) as CallToolResult;
+      expect(sentAgentId).toBe('agent-2');
+      expect(result.isError).toBe(true);
+      const sc = result.structuredContent as Record<string, unknown>;
+      expect(sc.code).toBe('OIDC_EXCHANGE_FAILED');
+      expect(sc.status).toBe(403);
+      expect(sc.suggestion).toBe(recoveryHint);
+      expect(String(sc.message)).toContain('this token binds to no agent');
+      expect((sc.response as Record<string, unknown>).error).toBe('CERT_AGENT_BINDING_MISMATCH');
+      expect(JSON.stringify(result.content)).toContain('CERT_AGENT_BINDING_MISMATCH');
+    } finally {
+      await close();
+    }
+  });
+
   it('a broken token source is OIDC_TOKEN_SOURCE_FAILED', async () => {
     vi.stubGlobal('fetch', vi.fn());
     const { client, close } = await connect({
