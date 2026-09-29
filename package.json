@@ -55,7 +55,7 @@
     "prepublishOnly": "npm run build && npm run lint:pkg"
   },
   "dependencies": {
-    "@agledger/verify-core": "^1.5.0",
+    "@agledger/verify-core": "^1.6.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "zod": "^3.25.0 || ^4.0.0"
   },
