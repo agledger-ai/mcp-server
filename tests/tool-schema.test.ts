@@ -68,6 +68,14 @@ describe('published tool schemas', () => {
     }
   });
 
+  it('trustAnchors and distrustedKeys publish as flat string arrays', () => {
+    const verify = schemaFor('agledger_verify') as { properties?: Record<string, unknown> };
+    for (const field of ['trustAnchors', 'distrustedKeys']) {
+      expect(verify.properties?.[field]).toMatchObject({ type: 'array', items: { type: 'string' } });
+      expect(verify.properties?.[field]).not.toHaveProperty('anyOf');
+    }
+  });
+
   it('publishes no additionalProperties keyword on any tool', () => {
     // The tools refuse undeclared arguments in the handler, which needs a loose
     // object so the stray key reaches it. A loose object would publish
