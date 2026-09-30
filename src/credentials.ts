@@ -448,10 +448,10 @@ export class OidcCertCredential implements Credential {
 
     if (res.status !== 201) {
       const scrubbed = scrub(res.body, token);
-      const serverMessage = (scrubbed as { message?: unknown } | null)?.message;
+      const serverDetail = (scrubbed as { detail?: unknown } | null)?.detail;
       throw new OidcExchangeError(
         `OIDC cert exchange failed: POST ${EXCHANGE_PATH} returned ${res.status}${
-          typeof serverMessage === 'string' ? `: ${serverMessage}` : ''
+          typeof serverDetail === 'string' ? `: ${serverDetail}` : ''
         }`,
         res.status,
         scrubbed,

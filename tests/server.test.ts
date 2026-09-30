@@ -400,7 +400,7 @@ describe('agledger_api', () => {
 
   it('forwards full API error body', async () => {
     const errorBody = {
-      message: 'Record not found',
+      detail: 'Record not found',
       code: 'NOT_FOUND',
       docUrl: 'https://www.agledger.ai/docs/errors/NOT_FOUND',
       suggestion: 'Check the record ID and try again.',
@@ -429,7 +429,7 @@ describe('agledger_api', () => {
 
   it('forwards 403 with missingScopes', async () => {
     const errorBody = {
-      message: 'Insufficient permissions',
+      detail: 'Insufficient permissions',
       code: 'FORBIDDEN',
       missingScopes: ['records:write'],
       suggestion: 'Request records:write scope on your API key.',
@@ -503,7 +503,7 @@ describe('agledger_api', () => {
     // Thin-passthrough contract: the API owns error guidance. The MCP must not
     // inject a suggestion or any other field the API didn't return.
     const errorBody = {
-      message: 'Invalid Record type',
+      detail: 'Invalid Record type',
       code: 'BAD_REQUEST',
     };
     vi.stubGlobal(
@@ -529,7 +529,7 @@ describe('agledger_api', () => {
 
   it('preserves existing API suggestion without overwriting', async () => {
     const errorBody = {
-      message: 'Record not found',
+      detail: 'Record not found',
       code: 'NOT_FOUND',
       suggestion: 'The record may have been deleted.',
     };
@@ -788,9 +788,9 @@ describe('content[] mirror: every tool path returns non-empty content[]', () => 
     assertContentMirrorsStructured(result);
   });
 
-  it('agledger_api error: content[] mirrors the full API error body (not just message)', async () => {
+  it('agledger_api error: content[] mirrors the full API error body (not just detail)', async () => {
     const errorBody = {
-      message: 'Forbidden',
+      detail: 'Forbidden',
       code: 'FORBIDDEN',
       missingScopes: ['records:write'],
       docUrl: 'https://www.agledger.ai/docs/errors/FORBIDDEN',

@@ -29,7 +29,7 @@ describe('OIDC credential errors reach the tool result', () => {
         if (url.endsWith('/v1/auth/oidc/cert')) {
           const sent = JSON.parse(String(init.body)).oidcToken as string;
           return new Response(
-            JSON.stringify({ message: `Untrusted issuer for ${sent}`, recoveryHint: 'Register the issuer first.' }),
+            JSON.stringify({ detail: `Untrusted issuer for ${sent}`, recoveryHint: 'Register the issuer first.' }),
             { status: 401, headers: { 'content-type': 'application/json' } },
           );
         }
@@ -78,7 +78,6 @@ describe('OIDC credential errors reach the tool result', () => {
               status: 403,
               detail: 'The body names agent agent-2, but this token binds to no agent.',
               error: 'CERT_AGENT_BINDING_MISMATCH',
-              message: 'The body names agent agent-2, but this token binds to no agent.',
               recoveryHint,
               retryable: false,
             }),
