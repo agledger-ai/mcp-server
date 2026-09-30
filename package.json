@@ -1,6 +1,6 @@
 {
   "name": "@agledger/mcp-server",
-  "version": "2.12.0",
+  "version": "3.0.0",
   "description": "AGLedger MCP Server: thin API pass-through for AI agents via MCP protocol",
   "license": "SEE LICENSE IN LICENSE",
   "author": "AGLedger LLC",
