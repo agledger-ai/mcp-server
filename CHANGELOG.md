@@ -8,9 +8,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 Targets API 2.0 only. The major version follows the API's, and is 3 because this server is at 2.x.
 
+### Breaking
+
+- **`agledger_verify` takes `requireSuppliedKeys`, not `requireOutOfBandKeys`.** A key the Server serves at `/v1/verification-keys` comes from the same database as the export, so "out of band" promised an independence the argument never gave. Behaviour is unchanged, and the old name is refused as an unknown argument. In the result, `keyProvenance.outOfBand` is `keyProvenance.supplied`, `optionalChecks` carries `key_anchoring`, and every result carries `keyTrust`.
+- **`agledger_verify` returns a second text block with the verdict.** The first block still mirrors `structuredContent` as JSON. The second states `PASS`, `UNANCHORED` or `FAIL` with the next step, worded from `valid` and `keyTrust.status` only. A chain that verifies without `trustAnchors` reads `Verdict: UNANCHORED, not a clean pass`, names the key the export claims as its Server's (`exportMetadata.anchoredFrom`, which is not an anchor) and says to call the tool again with a pin; `isError` stays false for it. Entries that carry no signature are named as covered by the hash chain only, and agent signatures left unchecked are counted.
+
 ### Added
 
-- **`agledger_verify` reports an unsigned entry written while the vault was signing.** An entry with no signing key fails with the new `CHAIN_ENTRY_UNSIGNED` when an earlier entry in its chain names a key, or when it was written at or after the earliest activation time among the keys the verifier holds. An unsigned history written before the first key stays reduced coverage, as before. An entry that names a key but carries an all-zero signature now fails `CHAIN_SIGNATURE_INVALID`. Both match the Server's own chain verification. Requires `@agledger/verify-core` 1.6.0.
+- **`agledger_verify` takes `trustAnchors` and `distrustedKeys`**, through `@agledger/verify-core` 2.0.0. `trustAnchors` is the SPKI digests (`sha256:<hex>`) of vault keys the operator took out of band; the signed key statements the export carries, plus the `statements` on keys passed as `publicKeys`, are walked from them. An entry signed by a key the walk does not reach fails `CHAIN_SIGNING_KEY_UNANCHORED`, and a statement that does not hold fails at position 0 with `KEY_STATEMENT_INVALID`, `KEY_CLOSURE_INVALID` or `CHAIN_KEY_WINDOW_DRIFT`; the tool description names all four, and the compile-time check that it names every export code now covers `KEY_*`. `distrustedKeys` takes the operator's `VAULT_DISTRUSTED_KEYS` entries; without `trustAnchors` it is refused (`INVALID_ARGUMENT`) rather than ignored, as is a malformed digest. Both publish as flat string arrays. Every export vector in the API 2.0 conformance corpus was driven through the packed server over stdio, unpinned and pinned on the key the export names, and returned its expected verdict and verdict text.
+
+- **`agledger_verify` reports an unsigned entry written while the vault was signing.** An entry with no signing key fails with the new `CHAIN_ENTRY_UNSIGNED` when an earlier entry in its chain names a key, or when it was written at or after the earliest activation time among the keys the verifier holds. An unsigned history written before the first key stays reduced coverage, as before. An entry that names a key but carries an all-zero signature now fails `CHAIN_SIGNATURE_INVALID`. Both match the Server's own chain verification.
 
 ### Changed
 
