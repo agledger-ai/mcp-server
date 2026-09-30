@@ -185,7 +185,7 @@ describe('OIDC cert exchange', () => {
 
   it('on a 401 re-exchanges exactly once and retries the request once with the same bytes and key', async () => {
     const server = fakeServer({
-      route: (_call, bearer) => (bearer === 'cert-1' ? json(401, { message: 'cert revoked' }) : json(201, { ok: true })),
+      route: (_call, bearer) => (bearer === 'cert-1' ? json(401, { detail: 'cert revoked' }) : json(201, { ok: true })),
     });
     const client = new ApiClient(API, new OidcCertCredential({ getOidcToken: tokenSource().get }));
 
@@ -201,7 +201,7 @@ describe('OIDC cert exchange', () => {
   });
 
   it('surfaces a second 401 as the answer, without a third attempt', async () => {
-    const server = fakeServer({ route: () => json(401, { message: 'nope' }) });
+    const server = fakeServer({ route: () => json(401, { detail: 'nope' }) });
     const client = new ApiClient(API, new OidcCertCredential({ getOidcToken: tokenSource().get }));
 
     const res = await client.request('GET', '/v1/auth/me');
@@ -212,7 +212,7 @@ describe('OIDC cert exchange', () => {
   });
 
   it('does not retry a 401 on an API key', async () => {
-    const server = fakeServer({ route: () => json(401, { message: 'bad key' }) });
+    const server = fakeServer({ route: () => json(401, { detail: 'bad key' }) });
     const client = new ApiClient(API, 'agl_agt_key');
     const res = await client.request('GET', '/v1/auth/me');
     expect(res.status).toBe(401);
@@ -246,7 +246,7 @@ describe('OIDC cert exchange', () => {
   it('keeps the current cert when a refresh fails before expiry, warns once, and surfaces the error after expiry', async () => {
     const server = fakeServer({
       ttlMs: 100_000,
-      exchange: (_c, n) => (n > 1 ? json(503, { message: 'IdP down' }) : undefined),
+      exchange: (_c, n) => (n > 1 ? json(503, { detail: 'IdP down' }) : undefined),
     });
     let now = 0;
     const warnings: string[] = [];
@@ -268,13 +268,13 @@ describe('OIDC cert exchange', () => {
     expect(server.exchanges.length).toBeGreaterThanOrEqual(3);
   });
 
-  it('reports a refused exchange with the Server status, message and recoveryHint, and never the token', async () => {
+  it('reports a refused exchange with the Server status, detail and recoveryHint, and never the token', async () => {
     const src = tokenSource();
     fakeServer({
       exchange: (call) =>
         json(409, {
           code: 'CONFLICT',
-          message: 'This OIDC token id has already been exchanged',
+          detail: 'This OIDC token id has already been exchanged',
           recoveryHint: 'Fetch a fresh token from your IdP and exchange again.',
           echoed: exchangeBody(call).oidcToken,
         }),
@@ -305,7 +305,7 @@ describe('OIDC cert exchange', () => {
           type: '/problems/validation-error',
           status: 400,
           error: 'VALIDATION_ERROR',
-          message: 'body/oidcToken must NOT have more than 16384 characters',
+          detail: 'body/oidcToken must NOT have more than 16384 characters',
           details: [{ instancePath: '/oidcToken', constraint: 'maxLength', received: sent }],
           errors: [{ instancePath: '/oidcToken', data: sent.slice(0, 60) + '.x' }],
         });

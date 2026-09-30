@@ -123,7 +123,7 @@ describe('AGLedger-On-Behalf-Of', () => {
         });
       }
       return call.headers[H] === first
-        ? json(401, { message: 'agledger-on-behalf-of token did not validate against any trusted_issuers row' })
+        ? json(401, { detail: 'agledger-on-behalf-of token did not validate against any trusted_issuers row' })
         : json(201, { ok: true });
     });
     const client = new ApiClient(
@@ -143,7 +143,7 @@ describe('AGLedger-On-Behalf-Of', () => {
 
   it('does not retry a 401 naming the delegation when the source yields the same token', async () => {
     const token = delegationToken(1);
-    const calls = stubFetch(() => json(401, { message: 'Delegation token is missing the RFC 8693 act claim' }));
+    const calls = stubFetch(() => json(401, { detail: 'Delegation token is missing the RFC 8693 act claim' }));
     const client = new ApiClient(API, 'key', 30_000, new DelegationSource({ getToken: () => token, origin: 'SRC' }));
     const res = await client.request('POST', '/x', { body: {} });
     expect(res.status).toBe(401);
@@ -161,7 +161,7 @@ describe('AGLedger-On-Behalf-Of', () => {
           certJws: `cert-${exchanges}`,
         });
       }
-      return call.headers.Authorization === 'Bearer cert-1' ? json(401, { message: 'cert revoked' }) : json(201, {});
+      return call.headers.Authorization === 'Bearer cert-1' ? json(401, { detail: 'cert revoked' }) : json(201, {});
     });
     const client = new ApiClient(
       API,
@@ -178,7 +178,7 @@ describe('AGLedger-On-Behalf-Of', () => {
   it('cuts the token out of a response that echoes it, and leaves other JWTs alone', async () => {
     const token = delegationToken(1);
     const other = jwt({ sub: 'someone-else' });
-    stubFetch(() => json(400, { message: `bad header ${token}`, details: [{ received: token }], certJws: other }));
+    stubFetch(() => json(400, { detail: `bad header ${token}`, details: [{ received: token }], certJws: other }));
     const client = new ApiClient(API, 'key', 30_000, new DelegationSource({ getToken: () => token, origin: 'SRC' }));
     const res = await client.request('POST', '/x', { body: {} });
     const text = JSON.stringify(res.body);
@@ -188,9 +188,9 @@ describe('AGLedger-On-Behalf-Of', () => {
   });
 
   it('namesDelegation recognises the Server bodies that are about the delegation', () => {
-    expect(namesDelegation({ message: 'agledger-on-behalf-of token did not validate' })).toBe(true);
-    expect(namesDelegation({ message: 'Delegation token could not be validated' })).toBe(true);
-    expect(namesDelegation({ message: 'Invalid or expired credential' })).toBe(false);
+    expect(namesDelegation({ detail: 'agledger-on-behalf-of token did not validate' })).toBe(true);
+    expect(namesDelegation({ detail: 'Delegation token could not be validated' })).toBe(true);
+    expect(namesDelegation({ detail: 'Invalid or expired credential' })).toBe(false);
   });
 });
 

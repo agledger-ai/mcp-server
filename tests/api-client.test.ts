@@ -153,7 +153,7 @@ describe('ApiClient', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValueOnce(
-        new Response(JSON.stringify({ message: 'Not found' }), {
+        new Response(JSON.stringify({ detail: 'Not found' }), {
           status: 404,
           headers: { 'content-type': 'application/json' },
         }),
