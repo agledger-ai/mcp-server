@@ -15,11 +15,15 @@ import { z } from 'zod/v4';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import {
+  parseDistrustedKeys,
+  parseTrustAnchors,
+  suggestion,
   verifyAuditExport,
   type AgentPublicKeyJwk,
   type FailureCode,
-  type OutOfBandKeyEntry,
   type RecordAuditExportInput,
+  type SuppliedKeyEntry,
+  type VerifyExportResult,
 } from '@agledger/verify-core';
 import { ApiClient } from './api-client.js';
 import {
@@ -234,7 +238,7 @@ function parseJsonObject(
 /**
  * Parse a JSON-encoded object OR array. Used for fields that legitimately
  * accept either shape (e.g. `agledger_verify.publicKeys`, which accepts verify-core
- * `OutOfBandKeyEntry[]` polymorphism). Strings,
+ * `SuppliedKeyEntry[]` polymorphism). Strings,
  * numbers, booleans, and null still fail loudly.
  */
 function parseJsonObjectOrArray(
@@ -278,11 +282,67 @@ function parseJsonObjectOrArray(
  */
 function unwrapVerificationKeys(
   raw: Record<string, unknown> | unknown[],
-): Record<string, string> | ReadonlyArray<OutOfBandKeyEntry> {
+): Record<string, string> | ReadonlyArray<SuppliedKeyEntry> {
   if (!Array.isArray(raw) && Array.isArray((raw as { data?: unknown }).data)) {
-    return (raw as { data: ReadonlyArray<OutOfBandKeyEntry> }).data;
+    return (raw as { data: ReadonlyArray<SuppliedKeyEntry> }).data;
   }
-  return raw as Record<string, string> | ReadonlyArray<OutOfBandKeyEntry>;
+  return raw as Record<string, string> | ReadonlyArray<SuppliedKeyEntry>;
+}
+
+/**
+ * The verdict of an `agledger_verify` run as one sentence plus the next step,
+ * sent as a second text block after the JSON mirror. Worded from `valid` and
+ * `keyTrust.status` only: an applicability flag says a check ran, never that
+ * it passed, so no sentence here claims agreement on anything but the verdict.
+ * A chain that verifies with no trust anchor is not a clean pass and never
+ * reads as one.
+ */
+function verifyVerdictText(result: VerifyExportResult): string {
+  const trust = result.keyTrust;
+  const lines: string[] = [];
+  if (!result.valid) {
+    const at = result.brokenAt;
+    lines.push(
+      at
+        ? `Verdict: FAIL at position ${at.position}: ${at.code}.${at.detail ? ` ${at.detail}` : ''}`
+        : 'Verdict: FAIL.',
+    );
+    for (const f of trust.findings) {
+      lines.push(`Key finding: ${f.code}${f.keyId ? ` (${f.keyId})` : ''}: ${f.detail}`);
+    }
+    if (at) lines.push(`Next: ${suggestion(at.code)}`);
+  } else if (trust.status === 'walked') {
+    lines.push(
+      `Verdict: PASS. ${result.verifiedEntries}/${result.totalEntries} entries verified, and every signing key is ` +
+        `linked by signed key statements to your trust anchor (${trust.anchors.join(', ')}).`,
+    );
+  } else {
+    lines.push(
+      `Verdict: UNANCHORED, not a clean pass. The hash chain is intact and ${result.verifiedEntries}/${result.totalEntries} ` +
+        'entries verify, but no trustAnchors were given, so the signatures were checked against keys nobody pinned: ' +
+        "a key written into the Server's database alone would pass.",
+    );
+    lines.push(
+      'Next: call agledger_verify again with trustAnchors set to the sha256:<hex> digest of a vault key taken out of ' +
+        'band (the installer prints the first vault key\'s; ask the operator). ' +
+        (trust.anchoredFrom
+          ? `The export names its Server's key as ${trust.anchoredFrom}; that is the export's own claim and is not an anchor.`
+          : 'The export names no Server key.'),
+    );
+  }
+  const { skipped } = result.signatureCoverage;
+  if (result.valid && skipped > 0) {
+    lines.push(
+      `${skipped} of ${result.totalEntries} entries carry no signature (written before the install registered its first key), so they are covered by the hash chain only.`,
+    );
+  }
+  const { present, verified } = result.agentSignatures;
+  if (present > verified) {
+    lines.push(
+      `${present - verified} of ${present} agent signatures were not checked: pass agentKeys with the agents' cert public keys to re-verify them.`,
+    );
+  }
+  return lines.join('\n');
 }
 
 /**
@@ -292,7 +352,8 @@ function unwrapVerificationKeys(
  * CHAIN_KEY_NOT_YET_ACTIVE). `ExportCodesMissing` below makes the compiler
  * fail when verify-core adds an export-level code this list does not carry.
  * CHECKPOINT_* and TENANT_* are dump-verifier codes and never come back from
- * an audit export.
+ * an audit export. KEY_* are findings on the export's signed key statements,
+ * reported at position 0 when trustAnchors are given.
  */
 const EXPORT_FAILURE_CODES = [
   'CHAIN_HASH_MISMATCH',
@@ -315,12 +376,16 @@ const EXPORT_FAILURE_CODES = [
   'CHAIN_ACTOR_ATTRIBUTION_MISMATCH',
   'CHAIN_AGENT_SIGNATURE_INVALID',
   'CHAIN_UNSUPPORTED_ALGORITHM',
+  'CHAIN_SIGNING_KEY_UNANCHORED',
+  'KEY_STATEMENT_INVALID',
+  'KEY_CLOSURE_INVALID',
+  'CHAIN_KEY_WINDOW_DRIFT',
   'UNSUPPORTED_FORMAT',
   'CHAIN_EMPTY',
 ] as const satisfies readonly FailureCode[];
 
 type ExportCodesMissing = Exclude<
-  Extract<FailureCode, `CHAIN_${string}` | 'UNSUPPORTED_FORMAT'>,
+  Extract<FailureCode, `CHAIN_${string}` | `KEY_${string}` | 'UNSUPPORTED_FORMAT'>,
   (typeof EXPORT_FAILURE_CODES)[number]
 >;
 // Resolves to `true` only when nothing is missing; otherwise the assignment
@@ -369,14 +434,38 @@ const VERIFY_ARGS = {
   publicKeys: jsonStringField
     .optional()
     .describe(
-      'Optional out-of-band signing keys. Accepts any of these as a JSON-encoded ' +
+      'Optional signing keys you supply. Accepts any of these as a JSON-encoded ' +
         'string (or a native object/array): a compact map ' +
         '\'{"key-1":"MCowBQYDK2VwAyEA..."}\' (values are base64 SPKI DER; Ed25519 keys ' +
         'start "MCowBQYDK2Vw", P-256 keys "MFkwEwYHKoZIzj0"), the list shape ' +
         '\'[{"keyId":"key-1","publicKey":"MCowBQYDK2VwAyEA..."}]\', or the raw ' +
         'GET /v1/verification-keys response envelope (\'{"data":[...], ...}\'); the ' +
         '.data array is unwrapped automatically, so the agledger_api response can be ' +
-        'passed straight through). Merged over any keys embedded in the export.',
+        'passed straight through, and each key\'s signed statements are walked with trustAnchors). ' +
+        'Merged over any keys embedded in the export. Where a key came from is not whether it is ' +
+        'trusted: the Server serves these from the same database as the export. That is trustAnchors.',
+    ),
+  trustAnchors: z
+    .array(z.string())
+    .optional()
+    .describe(
+      'Recommended. SPKI digests ("sha256:<64 hex>") of vault keys you took out of band: the installer ' +
+        'prints the first vault key\'s, and the Server\'s signing-key-digest.js derives one from a key ' +
+        'the operator holds. Ask the operator for it; do not take it from the export ' +
+        '(exportMetadata.anchoredFrom) or from GET /v1/verification-keys, which are the Server\'s own word. ' +
+        'The signed key statements the export carries are walked from these: an entry signed by a key ' +
+        'the walk does not reach fails CHAIN_SIGNING_KEY_UNANCHORED, and a statement that does not hold ' +
+        'fails at position 0 with KEY_STATEMENT_INVALID, KEY_CLOSURE_INVALID or CHAIN_KEY_WINDOW_DRIFT. ' +
+        'Without it, result.keyTrust.status is "no_anchor": valid:true then means only that the chain ' +
+        'is intact against keys nobody pinned, not that it is trusted.',
+    ),
+  distrustedKeys: z
+    .array(z.string())
+    .optional()
+    .describe(
+      'Optional. The operator\'s VAULT_DISTRUSTED_KEYS entries: "sha256:<64 hex>", optionally ' +
+        '"@<RFC 3339 instant>". What such a key signed from that instant (with none, from its retirement) ' +
+        'counts for nothing in the walk. Requires trustAnchors.',
     ),
   agentKeys: jsonStringField
     .optional()
@@ -394,13 +483,12 @@ const VERIFY_ARGS = {
       'If set, every entry must reference this keyId. Rejects exports signed by a ' +
       'retired or unexpected key even if cryptographically valid.',
     ),
-  requireOutOfBandKeys: z
+  requireSuppliedKeys: z
     .boolean()
     .optional()
     .describe(
-      'High-assurance: refuse keys embedded in the export. An entry whose only key is ' +
-      'export-embedded fails CHAIN_KEY_POLICY_VIOLATION, forcing verification against ' +
-      'keys supplied out of band via publicKeys.',
+      'Refuse keys embedded in the export: an entry whose only key is export-embedded fails ' +
+      'CHAIN_KEY_POLICY_VIOLATION, so every signature is checked against a key from publicKeys.',
     ),
 } satisfies z.ZodRawShape;
 
@@ -687,9 +775,11 @@ export class AgledgerMcpServer {
           'Decodes each entry\'s tagged COSE_Sign1 envelope (RFC 9052), recomputes ' +
           'sha256 over the envelope bytes, walks the hash chain, cross-checks the protected-' +
           'header chain claim against the row columns, and verifies every envelope signature (Ed25519 or ES256, dispatched from the trusted key material; anything else fails closed). ' +
-          'No network calls. For an independent audit, pass publicKeys obtained out of band ' +
-          '(GET /v1/verification-keys or /.well-known/scitt-keys) rather than trusting the ' +
-          'export\'s embedded keys; result.keyProvenance reports out-of-band vs embedded key use. ' +
+          'No network calls. Pass trustAnchors (the sha256:<hex> digest of a vault key the operator ' +
+          'took out of band) so the export\'s signed key statements are walked from a key you trust: ' +
+          'without it the keys are taken on the export\'s word, result.keyTrust.status is "no_anchor", ' +
+          'and a valid result is UNANCHORED, not a clean pass. Only valid:true with ' +
+          'keyTrust.status "walked" is a PASS. The second text block states the verdict and the next step. ' +
           'On failure, brokenAt pinpoints the first entry that failed and its canonical code ' +
           `(${EXPORT_FAILURE_CODES.join(', ')}); CHAIN_UNSUPPORTED_ALGORITHM means this build ` +
           'could not compute the key\'s algorithm: upgrade, and never read it as a pass. Obtain the export via agledger_api with method=GET, path=/v1/records/{id}/audit-export. ' +
@@ -714,8 +804,10 @@ export class AgledgerMcpServer {
             export: exportRaw,
             publicKeys: publicKeysRaw,
             agentKeys: agentKeysRaw,
+            trustAnchors,
+            distrustedKeys,
             requireKeyId,
-            requireOutOfBandKeys,
+            requireSuppliedKeys,
           } = args;
 
           const decodedExport = parseJsonObject(exportRaw, 'export');
@@ -729,7 +821,30 @@ export class AgledgerMcpServer {
             );
           }
 
-          let publicKeys: Record<string, string> | ReadonlyArray<OutOfBandKeyEntry> | undefined;
+          // Parsed here as well as in verify-core so a malformed digest is
+          // reported against the argument that carried it.
+          try {
+            parseTrustAnchors(trustAnchors ?? []);
+            parseDistrustedKeys(distrustedKeys ?? []);
+          } catch (err) {
+            return errorResult(
+              err instanceof Error ? err.message : String(err),
+              'INVALID_ARGUMENT',
+              'Pass trustAnchors as ["sha256:<64 hex>"] and distrustedKeys as ["sha256:<64 hex>" or "sha256:<64 hex>@<RFC 3339 instant>"].',
+            );
+          }
+          const anchored = trustAnchors !== undefined && trustAnchors.length > 0;
+          // verify-core reads distrusted keys only during the walk, so without
+          // an anchor they would be dropped without a word.
+          if (!anchored && distrustedKeys !== undefined && distrustedKeys.length > 0) {
+            return errorResult(
+              'distrustedKeys is read only during the key-statement walk, which needs trustAnchors.',
+              'INVALID_ARGUMENT',
+              'Pass trustAnchors with the sha256:<hex> digest of a vault key the operator took out of band.',
+            );
+          }
+
+          let publicKeys: Record<string, string> | ReadonlyArray<SuppliedKeyEntry> | undefined;
           if (publicKeysRaw !== undefined && publicKeysRaw !== '') {
             const decodedKeys = parseJsonObjectOrArray(publicKeysRaw, 'publicKeys');
             if (!decodedKeys.ok) return decodedKeys.error;
@@ -754,12 +869,13 @@ export class AgledgerMcpServer {
             publicKeys,
             agentKeys,
             requireKeyId,
-            requireOutOfBandKeys,
+            requireSuppliedKeys,
+            ...(anchored ? { trustAnchors, distrustedKeys } : {}),
           });
 
           const structured = result as unknown as Record<string, unknown>;
           return {
-            content: mirrorContent(structured),
+            content: [...mirrorContent(structured), { type: 'text', text: verifyVerdictText(result) }],
             structuredContent: structured,
             isError: !result.valid,
           };

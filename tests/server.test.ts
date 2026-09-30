@@ -723,12 +723,156 @@ describe('agledger_verify', () => {
       arguments: {
         export: exp,
         publicKeys: verificationKeysEnvelope,
-        requireOutOfBandKeys: true,
+        requireSuppliedKeys: true,
       },
     });
 
     expect(result.isError).toBeFalsy();
     expect((result.structuredContent as Record<string, unknown>).valid).toBe(true);
+  });
+
+  const pinOf = (kp: TestKeypair): string =>
+    `sha256:${hash('sha256', Buffer.from(kp.publicKeyBase64, 'base64'), 'hex')}`;
+  const verdictOf = (result: CallToolResult): string => (result.content![1] as { text: string }).text;
+
+  it('without trustAnchors, reports no_anchor and a verdict that is not a clean pass', async () => {
+    const result = (await harness.client.callTool({
+      name: 'agledger_verify',
+      arguments: { export: makeTestExport() },
+    })) as CallToolResult;
+
+    expect(result.isError).toBeFalsy();
+    assertContentMirrorsStructured(result);
+    const content = result.structuredContent as { valid: boolean; keyTrust: { status: string }; optionalChecks: Record<string, string> };
+    expect(content.valid).toBe(true);
+    expect(content.keyTrust.status).toBe('no_anchor');
+    expect(content.optionalChecks.key_anchoring).toBe('skipped_no_input');
+    const verdict = verdictOf(result);
+    expect(verdict).toContain('Verdict: UNANCHORED, not a clean pass.');
+    expect(verdict).toContain('Next: call agledger_verify again with trustAnchors');
+    expect(verdict).not.toContain('PASS.');
+  });
+
+  // An export the API 2.0 engine wrote (the conformance corpus's valid.json),
+  // carrying the signed key statement that admits its key. The in-test builder
+  // above writes none, and a pinned key no statement admits is unanchored.
+  const engineExport = (): Record<string, unknown> =>
+    JSON.parse(readFileSync(join(HERE, 'fixtures', 'engine-export-valid.json'), 'utf8')) as Record<string, unknown>;
+  const enginePin = (): string =>
+    (engineExport().exportMetadata as { anchoredFrom: string }).anchoredFrom;
+
+  it('pinned on the Server key of an engine export, the walk runs and the verdict is PASS', async () => {
+    const result = (await harness.client.callTool({
+      name: 'agledger_verify',
+      arguments: { export: engineExport(), trustAnchors: [enginePin()] },
+    })) as CallToolResult;
+
+    expect(result.isError).toBeFalsy();
+    assertContentMirrorsStructured(result);
+    const content = result.structuredContent as { valid: boolean; keyTrust: { status: string; anchoredKeyIds: string[] } };
+    expect(content.valid).toBe(true);
+    expect(content.keyTrust.status).toBe('walked');
+    expect(content.keyTrust.anchoredKeyIds).toHaveLength(1);
+    expect(verdictOf(result)).toBe(
+      `Verdict: PASS. 3/3 entries verified, and every signing key is linked by signed key statements to your trust anchor (${enginePin()}).`,
+    );
+  });
+
+  it('the same engine export without trustAnchors is UNANCHORED and names the key the export claims', async () => {
+    const result = (await harness.client.callTool({
+      name: 'agledger_verify',
+      arguments: { export: engineExport() },
+    })) as CallToolResult;
+    expect(result.isError).toBeFalsy();
+    const verdict = verdictOf(result);
+    expect(verdict).toContain('Verdict: UNANCHORED, not a clean pass.');
+    expect(verdict).toContain(`The export names its Server's key as ${enginePin()}; that is the export's own claim and is not an anchor.`);
+  });
+
+  it('a signing key with no signed key statement is unanchored even when it is the pin', async () => {
+    const kp = makeTestKeypair();
+    const result = (await harness.client.callTool({
+      name: 'agledger_verify',
+      arguments: { export: makeTestExport(kp), trustAnchors: [pinOf(kp)] },
+    })) as CallToolResult;
+    expect(result.isError).toBe(true);
+    expect((result.structuredContent as { brokenAt: { code: string } }).brokenAt.code).toBe('CHAIN_SIGNING_KEY_UNANCHORED');
+    expect(verdictOf(result)).not.toContain('PASS');
+  });
+
+  it('pinned on a key nothing links to, fails CHAIN_SIGNING_KEY_UNANCHORED and says so', async () => {
+    const result = (await harness.client.callTool({
+      name: 'agledger_verify',
+      arguments: { export: makeTestExport(), trustAnchors: [`sha256:${'ab'.repeat(32)}`] },
+    })) as CallToolResult;
+
+    expect(result.isError).toBe(true);
+    const content = result.structuredContent as { brokenAt: { position: number; code: string } };
+    expect(content.brokenAt).toMatchObject({ position: 1, code: 'CHAIN_SIGNING_KEY_UNANCHORED' });
+    const verdict = verdictOf(result);
+    expect(verdict).toContain('Verdict: FAIL at position 1: CHAIN_SIGNING_KEY_UNANCHORED.');
+    expect(verdict).toContain('Next: ');
+    expect(verdict).not.toContain('PASS');
+    expect(verdict).not.toContain('linked by signed key statements to your trust anchor');
+  });
+
+  it('a failing chain never narrates a pass, whatever checks were applied', async () => {
+    const tampered = engineExport();
+    const entry = (tampered.entries as Array<{ integrity: { coseSign1: string } }>)[1]!;
+    const raw = Buffer.from(entry.integrity.coseSign1, 'base64');
+    raw[10] = raw[10]! ^ 0x01;
+    entry.integrity.coseSign1 = raw.toString('base64');
+    const result = (await harness.client.callTool({
+      name: 'agledger_verify',
+      arguments: { export: tampered, trustAnchors: [enginePin()] },
+    })) as CallToolResult;
+    expect(result.isError).toBe(true);
+    const verdict = verdictOf(result);
+    expect(verdict).toMatch(/^Verdict: FAIL at position \d+: /);
+    expect(verdict).not.toContain('PASS');
+    expect(verdict).not.toContain('Verdict: UNANCHORED');
+  });
+
+  it('an unsigned history is narrated as chain-linked only', async () => {
+    const exp = makeTestExport();
+    for (const e of exp.entries as Array<{ integrity: Record<string, unknown> }>) e.integrity.signingKeyId = null;
+    const meta = exp.exportMetadata as Record<string, unknown>;
+    meta.signingPublicKeys = {};
+    meta.signingPublicKey = null;
+    const result = (await harness.client.callTool({
+      name: 'agledger_verify',
+      arguments: { export: exp },
+    })) as CallToolResult;
+    expect((result.structuredContent as { signatureCoverage: { skipped: number } }).signatureCoverage.skipped).toBe(3);
+    expect(verdictOf(result)).toContain('3 of 3 entries carry no signature');
+  });
+
+  it('a distrusted pin anchors nothing', async () => {
+    const result = (await harness.client.callTool({
+      name: 'agledger_verify',
+      arguments: { export: engineExport(), trustAnchors: [enginePin()], distrustedKeys: [enginePin()] },
+    })) as CallToolResult;
+    expect(result.isError).toBe(true);
+    expect((result.structuredContent as { brokenAt: { code: string } }).brokenAt.code).toBe('CHAIN_SIGNING_KEY_UNANCHORED');
+  });
+
+  it('refuses distrustedKeys without trustAnchors, and a malformed anchor, as INVALID_ARGUMENT', async () => {
+    const kp = makeTestKeypair();
+    const alone = (await harness.client.callTool({
+      name: 'agledger_verify',
+      arguments: { export: makeTestExport(kp), distrustedKeys: [pinOf(kp)] },
+    })) as CallToolResult;
+    expect(alone.isError).toBe(true);
+    expect((alone.structuredContent as { code: string }).code).toBe('INVALID_ARGUMENT');
+    expect((alone.structuredContent as { message: string }).message).toContain('needs trustAnchors');
+
+    const bad = (await harness.client.callTool({
+      name: 'agledger_verify',
+      arguments: { export: makeTestExport(kp), trustAnchors: ['15d63684'] },
+    })) as CallToolResult;
+    expect(bad.isError).toBe(true);
+    expect((bad.structuredContent as { code: string }).code).toBe('INVALID_ARGUMENT');
+    expect((bad.structuredContent as { message: string }).message).toContain('15d63684');
   });
 
   it('rejects malformed export input', async () => {
