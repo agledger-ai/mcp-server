@@ -290,37 +290,62 @@ function unwrapVerificationKeys(
 }
 
 /**
- * The verdict of an `agledger_verify` run as one sentence plus the next step,
- * sent as a second text block after the JSON mirror. Worded from `valid` and
- * `keyTrust.status` only: an applicability flag says a check ran, never that
- * it passed, so no sentence here claims agreement on anything but the verdict.
- * A chain that verifies with no trust anchor is not a clean pass and never
- * reads as one.
+ * The verdict of an `agledger_verify` run, by the rule `@agledger/verify` and
+ * `agledger verify` apply: `trusted` only on a valid result whose key-statement
+ * walk reached a signature (`keyTrust.status` `walked`); a valid result with no
+ * anchor, or with anchors under which nothing verified, is `unanchored`.
+ */
+type VerifyVerdict = 'trusted' | 'unanchored' | 'failed';
+
+function exportVerdict(result: VerifyExportResult): VerifyVerdict {
+  if (!result.valid) return 'failed';
+  return result.keyTrust.status === 'walked' ? 'trusted' : 'unanchored';
+}
+
+/**
+ * The verdict as text plus the next step, sent as a second text block after
+ * the JSON mirror, worded as the other verifiers word their headlines. Worded
+ * from `valid` and `keyTrust.status` only: an applicability flag says a check
+ * ran, never that it passed, so no sentence here claims agreement on anything
+ * but the verdict. An unanchored result never reads as a pass.
  */
 function verifyVerdictText(result: VerifyExportResult): string {
   const trust = result.keyTrust;
+  const verdict = exportVerdict(result);
   const lines: string[] = [];
-  if (!result.valid) {
+  if (verdict === 'failed') {
     const at = result.brokenAt;
     lines.push(
       at
         ? `Verdict: FAIL at position ${at.position}: ${at.code}.${at.detail ? ` ${at.detail}` : ''}`
         : 'Verdict: FAIL.',
     );
+    lines.push('Verification FAILED: the chain or the key statements do not hold up.');
     for (const f of trust.findings) {
       lines.push(`Key finding: ${f.code}${f.keyId ? ` (${f.keyId})` : ''}: ${f.detail}`);
     }
     if (at) lines.push(`Next: ${suggestion(at.code)}`);
-  } else if (trust.status === 'walked') {
+  } else if (verdict === 'trusted') {
     lines.push(
-      `Verdict: PASS. ${result.verifiedEntries}/${result.totalEntries} entries verified, and every signing key is ` +
-        `linked by signed key statements to your trust anchor (${trust.anchors.join(', ')}).`,
+      `Verdict: PASS. Nothing failed, and every signature was checked under a key the signed key statements ` +
+        `link to a trust anchor you gave (${trust.anchors.join(', ')}). ` +
+        `${result.verifiedEntries}/${result.totalEntries} entries verified.`,
+    );
+  } else if (trust.status === 'no_anchored_signature') {
+    lines.push(
+      'Verdict: VERIFIED, NOT ANCHORED. Nothing failed, but this is NOT a trusted verdict: the trustAnchors ' +
+        `(${trust.anchors.join(', ')}) were walked, but no signature here verified under a key they anchor. ` +
+        'An entry that carries no signature proves nothing about who wrote it.',
+    );
+    lines.push(
+      'Next: if the entries are signed, check that each trustAnchors digest is a vault key of the install that wrote ' +
+        'this export (ask the operator). An export with no signed entry cannot be anchored.',
     );
   } else {
     lines.push(
-      `Verdict: UNANCHORED, not a clean pass. The hash chain is intact and ${result.verifiedEntries}/${result.totalEntries} ` +
-        'entries verify, but no trustAnchors were given, so the signatures were checked against keys nobody pinned: ' +
-        "a key written into the Server's database alone would pass.",
+      'Verdict: VERIFIED, NOT ANCHORED. Nothing failed, but this is NOT a trusted verdict: no trustAnchors were ' +
+        'given, so every signing key was taken on the word of the export itself, and a key written into the ' +
+        "Server's database alone would verify.",
     );
     lines.push(
       'Next: call agledger_verify again with trustAnchors set to the sha256:<hex> digest of a vault key taken out of ' +
@@ -333,7 +358,7 @@ function verifyVerdictText(result: VerifyExportResult): string {
   const { skipped } = result.signatureCoverage;
   if (result.valid && skipped > 0) {
     lines.push(
-      `${skipped} of ${result.totalEntries} entries carry no signature (written before the install registered its first key), so they are covered by the hash chain only.`,
+      `${skipped} of ${result.totalEntries} entries carry no signature, so they are covered by the hash chain only.`,
     );
   }
   const { present, verified } = result.agentSignatures;
@@ -777,9 +802,11 @@ export class AgledgerMcpServer {
           'header chain claim against the row columns, and verifies every envelope signature (Ed25519 or ES256, dispatched from the trusted key material; anything else fails closed). ' +
           'No network calls. Pass trustAnchors (the sha256:<hex> digest of a vault key the operator ' +
           'took out of band) so the export\'s signed key statements are walked from a key you trust: ' +
-          'without it the keys are taken on the export\'s word, result.keyTrust.status is "no_anchor", ' +
-          'and a valid result is UNANCHORED, not a clean pass. Only valid:true with ' +
-          'keyTrust.status "walked" is a PASS. The second text block states the verdict and the next step. ' +
+          'without it the keys are taken on the export\'s word and keyTrust.status is "no_anchor". ' +
+          'result.verdict is "trusted" (PASS: valid, and keyTrust.status "walked"), "failed", or "unanchored" ' +
+          '(VERIFIED, NOT ANCHORED: valid, but keyTrust.status "no_anchor", or "no_anchored_signature" when the ' +
+          'anchors were walked and no signature verified under a key they anchor); an unanchored result is not a trusted verdict. ' +
+          'The second text block states the verdict and the next step. ' +
           'On failure, brokenAt pinpoints the first entry that failed and its canonical code ' +
           `(${EXPORT_FAILURE_CODES.join(', ')}); CHAIN_UNSUPPORTED_ALGORITHM means this build ` +
           'could not compute the key\'s algorithm: upgrade, and never read it as a pass. Obtain the export via agledger_api with method=GET, path=/v1/records/{id}/audit-export. ' +
@@ -873,7 +900,9 @@ export class AgledgerMcpServer {
             ...(anchored ? { trustAnchors, distrustedKeys } : {}),
           });
 
-          const structured = result as unknown as Record<string, unknown>;
+          // verify-core's result verbatim, plus the verdict: `valid` alone is
+          // true on a run that anchored nothing.
+          const structured: Record<string, unknown> = { verdict: exportVerdict(result), ...result };
           return {
             content: [...mirrorContent(structured), { type: 'text', text: verifyVerdictText(result) }],
             structuredContent: structured,

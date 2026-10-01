@@ -747,8 +747,9 @@ describe('agledger_verify', () => {
     expect(content.valid).toBe(true);
     expect(content.keyTrust.status).toBe('no_anchor');
     expect(content.optionalChecks.key_anchoring).toBe('skipped_no_input');
+    expect((result.structuredContent as { verdict: string }).verdict).toBe('unanchored');
     const verdict = verdictOf(result);
-    expect(verdict).toContain('Verdict: UNANCHORED, not a clean pass.');
+    expect(verdict).toContain('Verdict: VERIFIED, NOT ANCHORED. Nothing failed, but this is NOT a trusted verdict: no trustAnchors were given');
     expect(verdict).toContain('Next: call agledger_verify again with trustAnchors');
     expect(verdict).not.toContain('PASS.');
   });
@@ -773,8 +774,9 @@ describe('agledger_verify', () => {
     expect(content.valid).toBe(true);
     expect(content.keyTrust.status).toBe('walked');
     expect(content.keyTrust.anchoredKeyIds).toHaveLength(1);
+    expect((result.structuredContent as { verdict: string }).verdict).toBe('trusted');
     expect(verdictOf(result)).toBe(
-      `Verdict: PASS. 3/3 entries verified, and every signing key is linked by signed key statements to your trust anchor (${enginePin()}).`,
+      `Verdict: PASS. Nothing failed, and every signature was checked under a key the signed key statements link to a trust anchor you gave (${enginePin()}). 3/3 entries verified.`,
     );
   });
 
@@ -784,8 +786,9 @@ describe('agledger_verify', () => {
       arguments: { export: engineExport() },
     })) as CallToolResult;
     expect(result.isError).toBeFalsy();
+    expect((result.structuredContent as { verdict: string }).verdict).toBe('unanchored');
     const verdict = verdictOf(result);
-    expect(verdict).toContain('Verdict: UNANCHORED, not a clean pass.');
+    expect(verdict).toContain('Verdict: VERIFIED, NOT ANCHORED.');
     expect(verdict).toContain(`The export names its Server's key as ${enginePin()}; that is the export's own claim and is not an anchor.`);
   });
 
@@ -811,6 +814,7 @@ describe('agledger_verify', () => {
     expect(content.brokenAt).toMatchObject({ position: 1, code: 'CHAIN_SIGNING_KEY_UNANCHORED' });
     const verdict = verdictOf(result);
     expect(verdict).toContain('Verdict: FAIL at position 1: CHAIN_SIGNING_KEY_UNANCHORED.');
+    expect((result.structuredContent as { verdict: string }).verdict).toBe('failed');
     expect(verdict).toContain('Next: ');
     expect(verdict).not.toContain('PASS');
     expect(verdict).not.toContain('linked by signed key statements to your trust anchor');
@@ -830,7 +834,7 @@ describe('agledger_verify', () => {
     const verdict = verdictOf(result);
     expect(verdict).toMatch(/^Verdict: FAIL at position \d+: /);
     expect(verdict).not.toContain('PASS');
-    expect(verdict).not.toContain('Verdict: UNANCHORED');
+    expect(verdict).not.toContain('NOT ANCHORED');
   });
 
   it('an unsigned history is narrated as chain-linked only', async () => {
@@ -844,7 +848,30 @@ describe('agledger_verify', () => {
       arguments: { export: exp },
     })) as CallToolResult;
     expect((result.structuredContent as { signatureCoverage: { skipped: number } }).signatureCoverage.skipped).toBe(3);
-    expect(verdictOf(result)).toContain('3 of 3 entries carry no signature');
+    expect(verdictOf(result)).toContain('3 of 3 entries carry no signature, so they are covered by the hash chain only.');
+    // When the entries were written is not something the export can tell.
+    expect(verdictOf(result)).not.toContain('registered its first key');
+  });
+
+  it('an unsigned history pinned on any key is unanchored (no_anchored_signature), never a pass', async () => {
+    const exp = makeTestExport();
+    for (const e of exp.entries as Array<{ integrity: Record<string, unknown> }>) e.integrity.signingKeyId = null;
+    const meta = exp.exportMetadata as Record<string, unknown>;
+    meta.signingPublicKeys = {};
+    meta.signingPublicKey = null;
+    const result = (await harness.client.callTool({
+      name: 'agledger_verify',
+      arguments: { export: exp, trustAnchors: [`sha256:${'ab'.repeat(32)}`] },
+    })) as CallToolResult;
+    expect(result.isError).toBeFalsy();
+    assertContentMirrorsStructured(result);
+    const content = result.structuredContent as { valid: boolean; verdict: string; keyTrust: { status: string } };
+    expect(content).toMatchObject({ valid: true, verdict: 'unanchored', keyTrust: { status: 'no_anchored_signature' } });
+    const verdict = verdictOf(result);
+    expect(verdict).toMatch(/^Verdict: VERIFIED, NOT ANCHORED\. Nothing failed, but this is NOT a trusted verdict: the trustAnchors/);
+    expect(verdict).toContain('no signature here verified under a key they anchor');
+    expect(verdict).not.toContain('PASS');
+    expect(verdict).not.toContain('link to a trust anchor you gave');
   });
 
   it('a distrusted pin anchors nothing', async () => {
