@@ -762,6 +762,23 @@ describe('agledger_verify', () => {
   const enginePin = (): string =>
     (engineExport().exportMetadata as { anchoredFrom: string }).anchoredFrom;
 
+  it('a key note reaches the verdict text: an honest rotation off a key distrusted after it passes', async () => {
+    const fx = join(HERE, 'fixtures', 'distrusted-rotation');
+    const { pin, distrust } = JSON.parse(readFileSync(join(fx, 'meta.json'), 'utf8')) as { pin: string; distrust: string };
+    const result = (await harness.client.callTool({
+      name: 'agledger_verify',
+      arguments: {
+        export: readFileSync(join(fx, 'export.json'), 'utf8'),
+        publicKeys: readFileSync(join(fx, 'keys.json'), 'utf8'),
+        trustAnchors: [pin],
+        distrustedKeys: [distrust],
+      },
+    })) as CallToolResult;
+    expect(result.isError).toBeFalsy();
+    expect((result.structuredContent as { verdict: string }).verdict).toBe('trusted');
+    expect(verdictOf(result)).toMatch(/Key note: \([0-9a-f]{16}\) a succession by [0-9a-f]{16}, which distrustedKeys distrusts/);
+  });
+
   it('pinned on the Server key of an engine export, the walk runs and the verdict is PASS', async () => {
     const result = (await harness.client.callTool({
       name: 'agledger_verify',
