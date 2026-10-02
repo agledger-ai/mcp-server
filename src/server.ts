@@ -15,6 +15,7 @@ import { z } from 'zod/v4';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import {
+  assertNotPinnedAndDistrusted,
   parseDistrustedKeys,
   parseTrustAnchors,
   suggestion,
@@ -290,28 +291,15 @@ function unwrapVerificationKeys(
 }
 
 /**
- * The verdict of an `agledger_verify` run, by the rule `@agledger/verify` and
- * `agledger verify` apply: `trusted` only on a valid result whose key-statement
- * walk reached a signature (`keyTrust.status` `walked`); a valid result with no
- * anchor, or with anchors under which nothing verified, is `unanchored`.
- */
-type VerifyVerdict = 'trusted' | 'unanchored' | 'failed';
-
-function exportVerdict(result: VerifyExportResult): VerifyVerdict {
-  if (!result.valid) return 'failed';
-  return result.keyTrust.status === 'walked' ? 'trusted' : 'unanchored';
-}
-
-/**
- * The verdict as text plus the next step, sent as a second text block after
- * the JSON mirror, worded as the other verifiers word their headlines. Worded
+ * The verdict as text plus the next step, carried as the result's `summary`,
+ * worded as the other verifiers word their headlines. Worded
  * from `valid` and `keyTrust.status` only: an applicability flag says a check
  * ran, never that it passed, so no sentence here claims agreement on anything
  * but the verdict. An unanchored result never reads as a pass.
  */
 function verifyVerdictText(result: VerifyExportResult): string {
   const trust = result.keyTrust;
-  const verdict = exportVerdict(result);
+  const verdict = result.verdict;
   const lines: string[] = [];
   if (verdict === 'failed') {
     const at = result.brokenAt;
@@ -809,7 +797,7 @@ export class AgledgerMcpServer {
           'result.verdict is "trusted" (PASS: valid, and keyTrust.status "walked"), "failed", or "unanchored" ' +
           '(VERIFIED, NOT ANCHORED: valid, but keyTrust.status "no_anchor", or "no_anchored_signature" when the ' +
           'anchors were walked and no signature verified under a key they anchor); an unanchored result is not a trusted verdict. ' +
-          'The second text block states the verdict and the next step. ' +
+          'result.summary states the verdict in words and the next step. ' +
           'On failure, brokenAt pinpoints the first entry that failed and its canonical code ' +
           `(${EXPORT_FAILURE_CODES.join(', ')}); CHAIN_UNSUPPORTED_ALGORITHM means this build ` +
           'could not compute the key\'s algorithm: upgrade, and never read it as a pass. Obtain the export via agledger_api with method=GET, path=/v1/records/{id}/audit-export. ' +
@@ -863,6 +851,15 @@ export class AgledgerMcpServer {
               'Pass trustAnchors as ["sha256:<64 hex>"] and distrustedKeys as ["sha256:<64 hex>" or "sha256:<64 hex>@<RFC 3339 instant>"].',
             );
           }
+          try {
+            assertNotPinnedAndDistrusted(trustAnchors, distrustedKeys);
+          } catch (err) {
+            return errorResult(
+              err instanceof Error ? err.message : String(err),
+              'INVALID_ARGUMENT',
+              'Pin the successor of a key that leaked (its sha256 digest from the operator) and keep the leaked key in distrustedKeys.',
+            );
+          }
           const anchored = trustAnchors !== undefined && trustAnchors.length > 0;
           // verify-core reads distrusted keys only during the walk, so without
           // an anchor they would be dropped without a word.
@@ -903,16 +900,21 @@ export class AgledgerMcpServer {
             ...(anchored ? { trustAnchors, distrustedKeys } : {}),
           });
 
-          // verify-core's result verbatim, plus the verdict: `valid` alone is
-          // true on a run that anchored nothing.
-          const structured: Record<string, unknown> = { verdict: exportVerdict(result), ...result };
+          // verify-core's result verbatim, verdict first (`valid` alone is true
+          // on a run that anchored nothing), with the verdict in words and the
+          // next step as `summary`, in the one JSON text block.
+          const { verdict, ...rest } = result;
+          const structured: Record<string, unknown> = { verdict, summary: verifyVerdictText(result), ...rest };
           return {
-            content: [...mirrorContent(structured), { type: 'text', text: verifyVerdictText(result) }],
+            content: mirrorContent(structured),
             structuredContent: structured,
             isError: !result.valid,
           };
         } catch (err) {
-          return errorResult(err instanceof Error ? err.message : String(err), 'VERIFY_FAILED');
+          // verify-core throws TypeError only on input it refuses (a supplied
+          // key's window that is not RFC 3339, a malformed key list): that is
+          // the caller's argument, not a failed verification.
+          return errorResult(err instanceof Error ? err.message : String(err), err instanceof TypeError ? 'INVALID_ARGUMENT' : 'VERIFY_FAILED');
         }
       },
     );

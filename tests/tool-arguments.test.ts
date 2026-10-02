@@ -107,7 +107,7 @@ describe('agledger_verify agentKeys', () => {
     })) as CallToolResult;
     expect(result.isError).toBe(true);
     const sc = result.structuredContent as Record<string, unknown>;
-    expect(sc.code).toBe('VERIFY_FAILED');
+    expect(sc.code).toBe('INVALID_ARGUMENT');
     expect(String(sc.message)).toMatch(/Ed25519/);
   });
 });

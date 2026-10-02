@@ -733,7 +733,12 @@ describe('agledger_verify', () => {
 
   const pinOf = (kp: TestKeypair): string =>
     `sha256:${hash('sha256', Buffer.from(kp.publicKeyBase64, 'base64'), 'hex')}`;
-  const verdictOf = (result: CallToolResult): string => (result.content![1] as { text: string }).text;
+  const verdictOf = (result: CallToolResult): string => {
+    // One text block, the JSON of structuredContent, which carries the verdict in words as `summary`.
+    expect(result.content).toHaveLength(1);
+    expect(JSON.parse((result.content![0] as { text: string }).text)).toEqual(result.structuredContent);
+    return (result.structuredContent as { summary: string }).summary;
+  };
 
   it('without trustAnchors, reports no_anchor and a verdict that is not a clean pass', async () => {
     const result = (await harness.client.callTool({
@@ -891,13 +896,24 @@ describe('agledger_verify', () => {
     expect(verdict).not.toContain('link to a trust anchor you gave');
   });
 
-  it('a distrusted pin anchors nothing', async () => {
+  it('refuses a key both pinned and distrusted as INVALID_ARGUMENT, as the Server refuses to start with it', async () => {
     const result = (await harness.client.callTool({
       name: 'agledger_verify',
       arguments: { export: engineExport(), trustAnchors: [enginePin()], distrustedKeys: [enginePin()] },
     })) as CallToolResult;
     expect(result.isError).toBe(true);
-    expect((result.structuredContent as { brokenAt: { code: string } }).brokenAt.code).toBe('CHAIN_SIGNING_KEY_UNANCHORED');
+    expect(result.structuredContent).toMatchObject({ code: 'INVALID_ARGUMENT', message: expect.stringMatching(/both a trust anchor and a distrusted key/) });
+  });
+
+  it('refuses a supplied key window that is not RFC 3339 as INVALID_ARGUMENT', async () => {
+    const exp = engineExport() as { exportMetadata: { signingPublicKeys: Record<string, string> } };
+    const [keyId, publicKey] = Object.entries(exp.exportMetadata.signingPublicKeys)[0]!;
+    const result = (await harness.client.callTool({
+      name: 'agledger_verify',
+      arguments: { export: exp, publicKeys: JSON.stringify([{ keyId, publicKey, activatedAt: 'yesterday' }]) },
+    })) as CallToolResult;
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent).toMatchObject({ code: 'INVALID_ARGUMENT', message: expect.stringMatching(/not an RFC 3339 instant/) });
   });
 
   it('refuses distrustedKeys without trustAnchors, and a malformed anchor, as INVALID_ARGUMENT', async () => {
