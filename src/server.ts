@@ -355,6 +355,9 @@ function verifyVerdictText(result: VerifyExportResult): string {
           : 'The export names no Server key.'),
     );
   }
+  for (const n of trust.notes) {
+    lines.push(`Key note: ${n.keyId ? `(${n.keyId}) ` : ''}${n.detail}`);
+  }
   const { skipped } = result.signatureCoverage;
   if (result.valid && skipped > 0) {
     lines.push(
