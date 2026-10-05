@@ -37,8 +37,9 @@ Add to your MCP client configuration (e.g. `claude_desktop_config.json`):
 
 Both flags are required, unless an OIDC token source stands in for the key (see
 [below](#authenticating-with-oidc-instead-of-an-api-key)). AGLedger is
-self-hosted, so there is no default server to call: without `--api-url` the
-server exits before it accepts a connection.
+self-hosted, so there is no default server to call: without `--api-url`, or
+with one that is not an absolute `http` or `https` URL, the server exits before
+it accepts a connection.
 
 Or run directly:
 
@@ -47,7 +48,7 @@ agledger-mcp --api-key <key> --api-url <url>
 ```
 
 Exit codes: `0` clean, `1` runtime failure, `2` usage or configuration error
-(missing flag, unknown flag), so a launcher can tell a misconfiguration from a
+(missing flag, unknown flag, an API URL that is not an `http(s)` URL), so a launcher can tell a misconfiguration from a
 crash.
 
 ## Authenticating with OIDC instead of an API key

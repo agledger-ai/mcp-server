@@ -79,6 +79,23 @@ describe('agledger-mcp exit codes', () => {
     expect(r.stderr).toMatch(/--help/);
   });
 
+  // A URL that does not parse used to start the server and exit 0 on EOF,
+  // leaving every tool call to fail later.
+  for (const [label, url] of [
+    ['--api-url', 'not-a-url'],
+    ['--api-url', 'localhost:3000'],
+    ['AGLEDGER_API_URL', 'not-a-url'],
+  ] as const) {
+    it(`exits 2 when ${label} is ${url}`, async () => {
+      const r =
+        label === '--api-url'
+          ? await run(['--api-key', 'k', '--api-url', url])
+          : await run(['--api-key', 'k'], { AGLEDGER_API_URL: url });
+      expect(r.code).toBe(2);
+      expect(r.stderr).toContain(`the API URL from ${label}`);
+    });
+  }
+
   it('exits 0 for --help', async () => {
     const r = await run(['--help']);
     expect(r.code).toBe(0);
