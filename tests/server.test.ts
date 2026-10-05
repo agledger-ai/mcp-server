@@ -591,6 +591,58 @@ describe('agledger_api', () => {
     expect(content.suggestion).toContain('Retry');
   });
 
+  it('a POST timeout carries the generated key it sent and says to retry with it', async () => {
+    const mockFetch = vi.fn().mockRejectedValueOnce(new DOMException('aborted', 'AbortError'));
+    vi.stubGlobal('fetch', mockFetch);
+
+    const result = await harness.client.callTool({
+      name: 'agledger_api',
+      arguments: { method: 'POST', path: '/v1/records', params: '{"type":"t"}' },
+    });
+
+    const sent = (mockFetch.mock.calls[0]![1] as { headers: Record<string, string> }).headers['Idempotency-Key'];
+    expect(sent).toBeTruthy();
+    const content = result.structuredContent as Record<string, unknown>;
+    expect(content.code).toBe('TIMEOUT');
+    expect(content.idempotencyKey).toBe(sent);
+    expect(content.suggestion).toContain(`idempotencyKey "${sent}"`);
+    expect(content.suggestion).toContain('--timeout <seconds>');
+  });
+
+  it('a POST timeout carries the caller-supplied key, and a connection failure does too', async () => {
+    const mockFetch = vi
+      .fn()
+      .mockRejectedValueOnce(new DOMException('aborted', 'AbortError'))
+      .mockRejectedValueOnce(new TypeError('fetch failed'));
+    vi.stubGlobal('fetch', mockFetch);
+
+    for (const code of ['TIMEOUT', 'NETWORK_ERROR']) {
+      const result = await harness.client.callTool({
+        name: 'agledger_api',
+        arguments: { method: 'POST', path: '/v1/records', params: '{}', idempotencyKey: 'my-key-1' },
+      });
+      const content = result.structuredContent as Record<string, unknown>;
+      expect(content.code).toBe(code);
+      expect(content.idempotencyKey).toBe('my-key-1');
+      expect(content.suggestion).toContain('idempotencyKey "my-key-1"');
+    }
+  });
+
+  it('a read timeout names no key, because none was sent', async () => {
+    const mockFetch = vi.fn().mockRejectedValueOnce(new DOMException('aborted', 'AbortError'));
+    vi.stubGlobal('fetch', mockFetch);
+
+    const result = await harness.client.callTool({
+      name: 'agledger_api',
+      arguments: { method: 'GET', path: '/v1/records' },
+    });
+
+    const content = result.structuredContent as Record<string, unknown>;
+    expect(content.code).toBe('TIMEOUT');
+    expect(content).not.toHaveProperty('idempotencyKey');
+    expect(content.suggestion).not.toContain('idempotencyKey "');
+  });
+
   it('handles non-JSON responses', async () => {
     vi.stubGlobal(
       'fetch',

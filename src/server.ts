@@ -688,6 +688,7 @@ export class AgledgerMcpServer {
           'The request body (POST/PUT/PATCH) and the query string (GET/DELETE) both go in `params`.',
         );
         if (refused) return refused;
+        let sentKey: string | undefined;
         try {
           const { method, path, params, idempotencyKey } = args;
 
@@ -730,7 +731,10 @@ export class AgledgerMcpServer {
             idempotencyKey?: string;
           } = {};
 
-          if (idempotencyKey !== undefined) options.idempotencyKey = idempotencyKey;
+          // The key is fixed here, not left for the client to generate, so a
+          // timeout error can name the key that went out. Only POST carries one.
+          sentKey = method === 'POST' ? (idempotencyKey ?? crypto.randomUUID()) : undefined;
+          if (sentKey !== undefined) options.idempotencyKey = sentKey;
 
           if (params !== undefined && params !== '') {
             const decoded = parseJsonObject(params, 'params');
@@ -766,16 +770,22 @@ export class AgledgerMcpServer {
           if (credentialError) return credentialError;
           if (err instanceof DOMException && err.name === 'AbortError') {
             return errorResult(
-              'The API did not respond in time. Retry the same request.',
+              'The API did not respond in time. The request may still have been applied.',
               'TIMEOUT',
-              'Retry the same request. Increase --timeout if your instance is slow to respond.',
+              sentKey
+                ? `Retry the same request with idempotencyKey "${sentKey}": the Server returns the original result if the first attempt was applied, and applies it once if not. A new key can create a duplicate. If your instance is slow to respond, start agledger-mcp with --timeout <seconds> (or AGLEDGER_TIMEOUT).`
+                : 'Retry the same request. This method carries no idempotency key. If your instance is slow to respond, start agledger-mcp with --timeout <seconds> (or AGLEDGER_TIMEOUT).',
+              sentKey ? { idempotencyKey: sentKey } : undefined,
             );
           }
           if (err instanceof TypeError && err.message.includes('fetch')) {
             return errorResult(
               err.message,
               'NETWORK_ERROR',
-              'Check that the API URL is correct. Try GET /health to verify connectivity.',
+              sentKey
+                ? `Check that the API URL is correct. Try GET /health to verify connectivity. If the connection dropped after the request went out it may have been applied: retry with idempotencyKey "${sentKey}", never a new key.`
+                : 'Check that the API URL is correct. Try GET /health to verify connectivity.',
+              sentKey ? { idempotencyKey: sentKey } : undefined,
             );
           }
           return errorResult(err instanceof Error ? err.message : String(err), 'UNKNOWN_ERROR');
