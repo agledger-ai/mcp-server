@@ -836,6 +836,56 @@ describe('agledger_verify', () => {
     expect(verdictOf(result)).toMatch(/Key note: \([0-9a-f]{16}\) a succession by [0-9a-f]{16}, which distrustedKeys distrusts/);
   });
 
+  describe('an export after a dated distrust entry', () => {
+    // A live API 2.0.0 export of a record its first key K signed, taken after
+    // the Server retired K with force from its successor F and restarted with
+    // VAULT_DISTRUSTED_KEYS=sha256:<K>@<instant>: signingKeyWindows lists K
+    // retired at that instant, with distrustedFrom. The tool's own argument is
+    // distrustedKeys, so the finding names it as verify-core words it.
+    const exported = () => readFileSync(join(HERE, 'fixtures', 'live-2.0.0', 'export-dated-distrust.json'), 'utf8');
+    const F = 'sha256:78e7bba47a2dccdb1dbf4f2dc81dc58a5c58735abe480de49d05081d3452aa3a';
+    const K = 'sha256:b649db0ec7c5c0fd921c2cb4d40466d91f4d98252dad2f7c0243851167b2d09e';
+    const FROM = '2026-10-05T23:03:51.537314Z';
+    type Content = { verdict: string; brokenAt?: { position: number; code: string; detail: string }; keyTrust: { findings: Array<{ detail: string }>; notes: Array<{ detail: string }> } };
+    const verify = async (distrustedKeys?: string[]) =>
+      (await harness.client.callTool({
+        name: 'agledger_verify',
+        arguments: { export: exported(), trustAnchors: [F], ...(distrustedKeys ? { distrustedKeys } : {}) },
+      })) as CallToolResult;
+
+    it('pinned on F alone fails CHAIN_KEY_WINDOW_DRIFT naming the distrustedKeys entry the Server applies', async () => {
+      const result = await verify();
+      expect(result.isError).toBe(true);
+      assertContentMirrorsStructured(result);
+      const content = result.structuredContent as Content;
+      expect(content).toMatchObject({ verdict: 'failed', brokenAt: { position: 0, code: 'CHAIN_KEY_WINDOW_DRIFT' } });
+      const advice = `this walk was given no distrust entry for it. If the operator confirms it, give distrustedKeys ${K}@${FROM}.`;
+      expect(content.brokenAt!.detail).toContain(advice);
+      expect(content.keyTrust.findings[0]!.detail).toContain(advice);
+      expect(verdictOf(result)).toContain(`Verdict: FAIL at position 0: CHAIN_KEY_WINDOW_DRIFT. retiredAt 2026-10-05T23:03:51.537Z is listed as the Server's distrust cutoff`);
+      expect(verdictOf(result)).not.toContain('--distrusted-key');
+    });
+
+    it('with K at the listed instant passes; at a later instant fails saying the entries disagree; at an earlier one passes with a note', async () => {
+      const same = await verify([`${K}@${FROM}`]);
+      expect(same.isError).toBeFalsy();
+      expect(same.structuredContent).toMatchObject({ verdict: 'trusted', keyTrust: { findings: [], notes: [] } });
+
+      const later = await verify([`${K}@2026-10-05T23:04:00Z`]);
+      expect(later.isError).toBe(true);
+      expect((later.structuredContent as Content).brokenAt!.detail).toContain(
+        `the distrust entry given for it (from 2026-10-05T23:04:00.000000Z) and the one the listing says the Server applies (VAULT_DISTRUSTED_KEYS, from ${FROM}) disagree.`,
+      );
+
+      const earlier = await verify([`${K}@2026-10-05T23:03:50Z`]);
+      expect(earlier.isError).toBeFalsy();
+      expect((earlier.structuredContent as Content).verdict).toBe('trusted');
+      const note = `distrustedKeys gives b649db0ec7c5c0fd the instant 2026-10-05T23:03:50.000000Z, and the listing says the Server distrusts it from ${FROM}`;
+      expect((earlier.structuredContent as Content).keyTrust.notes.map((n) => n.detail.slice(0, note.length))).toEqual([note]);
+      expect(verdictOf(earlier)).toContain(`Key note: (b649db0ec7c5c0fd) ${note}`);
+    });
+  });
+
   it('pinned on the Server key of an engine export, the walk runs and the verdict is PASS', async () => {
     const result = (await harness.client.callTool({
       name: 'agledger_verify',
