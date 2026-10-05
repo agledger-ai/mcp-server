@@ -31,6 +31,20 @@ process.on('unhandledRejection', (reason) => {
   process.exit(EXIT_RUNTIME_FAILURE);
 });
 
+/** Why an API URL cannot be used, or undefined when it can. */
+function apiUrlProblem(url: string): string | undefined {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return 'is not a URL';
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return `has scheme '${parsed.protocol}', and only http: and https: are supported`;
+  }
+  return undefined;
+}
+
 function main(): void {
   let values: { 'api-key'?: string; 'api-url'?: string; help?: boolean };
   try {
@@ -163,6 +177,18 @@ Exit codes: 0 clean, 1 runtime failure, 2 usage or configuration error.
     process.stderr.write(
       'Error: --api-url or AGLEDGER_API_URL environment variable is required. ' +
         'AGLedger is self-hosted, so the MCP server cannot guess your Server.\n',
+    );
+    process.exit(EXIT_USAGE_ERROR);
+  }
+  // A URL that does not parse used to start the server, which then failed
+  // every tool call; `localhost:3000` parses, with `localhost:` as its scheme.
+  // Only an absolute http(s) URL can reach a Server.
+  const urlProblem = apiUrlProblem(apiUrl);
+  if (urlProblem) {
+    const origin = values['api-url'] !== undefined ? '--api-url' : 'AGLEDGER_API_URL';
+    process.stderr.write(
+      `Error: the API URL from ${origin} (${JSON.stringify(apiUrl)}) ${urlProblem}. ` +
+        'Give the full base URL of your AGLedger Server, scheme included, for example https://agledger.internal.\n',
     );
     process.exit(EXIT_USAGE_ERROR);
   }
