@@ -482,7 +482,10 @@ const VERIFY_ARGS = {
       'Optional. The operator\'s VAULT_DISTRUSTED_KEYS entries: "sha256:<64 hex>", optionally ' +
         '"@<RFC 3339 instant>". What such a key signed from that instant (with none, from its retirement) ' +
         'counts for nothing in the walk. Requires trustAnchors. A dated entry may name a key also in ' +
-        'trustAnchors, which then vouches for what that key signed before the instant; an undated one may not.',
+        'trustAnchors, which then vouches for what that key signed before the instant; an undated one may not. ' +
+        'Where an export lists a key retired at the instant the Server distrusts it from (distrustedFrom), earlier ' +
+        'than its signed retirement, a run without the same entry fails on that window, and the finding names the ' +
+        'distrustedKeys entry to confirm with the operator.',
     ),
   agentKeys: jsonStringField
     .optional()
