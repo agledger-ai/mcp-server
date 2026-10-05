@@ -191,6 +191,9 @@ Every API error response includes a `recoveryHint` naming the fix, so an agent c
 |------|---------|-------------|
 | `--api-key` | `AGLEDGER_API_KEY` | AGLedger API key. Required unless an OIDC token source is set (see above). |
 | `--api-url` | `AGLEDGER_API_URL` | API base URL of your instance (required). AGLedger is self-hosted, so there is no default; the server refuses to start without it. |
+| `--timeout` | `AGLEDGER_TIMEOUT` | Seconds to wait for each API response (default 30). A positive number; anything else exits 2. |
+
+A call that times out may still have been applied. On a POST, the `TIMEOUT` error carries the `idempotencyKey` that was sent: retry with exactly that key and the Server returns the original result instead of creating a second record. Reads and other methods carry no key.
 
 ## What is AGLedger?
 

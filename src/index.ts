@@ -45,13 +45,25 @@ function apiUrlProblem(url: string): string | undefined {
   return undefined;
 }
 
+/** The longest delay setTimeout takes; a larger one fires at once, which would time every call out. */
+const MAX_TIMEOUT_SECONDS = 2_147_483;
+
+/** Why a timeout in seconds cannot be used, or undefined when it can. */
+function timeoutProblem(raw: string): string | undefined {
+  const seconds = raw.trim() === '' ? NaN : Number(raw);
+  if (!Number.isFinite(seconds) || seconds <= 0) return 'is not a positive number of seconds';
+  if (seconds > MAX_TIMEOUT_SECONDS) return `is more than ${MAX_TIMEOUT_SECONDS} seconds`;
+  return undefined;
+}
+
 function main(): void {
-  let values: { 'api-key'?: string; 'api-url'?: string; help?: boolean };
+  let values: { 'api-key'?: string; 'api-url'?: string; timeout?: string; help?: boolean };
   try {
     ({ values } = parseArgs({
       options: {
         'api-key': { type: 'string', short: 'k' },
         'api-url': { type: 'string', short: 'u' },
+        timeout: { type: 'string' },
         help: { type: 'boolean', short: 'h' },
       },
       strict: true,
@@ -78,6 +90,10 @@ Options:
   --api-url, -u     Base URL of your AGLedger instance (or AGLEDGER_API_URL env
                     var). Required: AGLedger is self-hosted, so there is no
                     default server to call.
+  --timeout         Seconds to wait for each API response (or AGLEDGER_TIMEOUT
+                    env var). Default 30. A call that times out may still have
+                    been applied: retry a POST with the idempotencyKey the
+                    timeout error names, never a new one.
   --help, -h        Show this help message
 
 Credentials: one is required. An API key wins when set; otherwise an OIDC
@@ -193,6 +209,19 @@ Exit codes: 0 clean, 1 runtime failure, 2 usage or configuration error.
     process.exit(EXIT_USAGE_ERROR);
   }
 
+  const timeoutRaw = values.timeout ?? process.env.AGLEDGER_TIMEOUT;
+  if (timeoutRaw !== undefined) {
+    const problem = timeoutProblem(timeoutRaw);
+    if (problem) {
+      const origin = values.timeout !== undefined ? '--timeout' : 'AGLEDGER_TIMEOUT';
+      process.stderr.write(
+        `Error: the timeout from ${origin} (${JSON.stringify(timeoutRaw)}) ${problem}. ` +
+          'Give the seconds to wait for each API response, for example 60.\n',
+      );
+      process.exit(EXIT_USAGE_ERROR);
+    }
+  }
+
   const oboCmd = process.env[ON_BEHALF_OF_ENV.CMD] || undefined;
   const oboFile = process.env[ON_BEHALF_OF_ENV.FILE] || undefined;
   let onBehalfOf: DelegationSourceOptions | undefined;
@@ -216,6 +245,7 @@ Exit codes: 0 clean, 1 runtime failure, 2 usage or configuration error.
   const server = new AgledgerMcpServer({
     ...(apiKey ? { apiKey } : { oidc }),
     apiUrl,
+    ...(timeoutRaw !== undefined ? { timeoutMs: Math.round(Number(timeoutRaw) * 1000) } : {}),
     ...(onBehalfOf ? { onBehalfOf } : {}),
   });
 

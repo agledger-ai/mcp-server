@@ -101,6 +101,27 @@ describe('agledger-mcp exit codes', () => {
     expect(r.code).toBe(0);
   });
 
+  it.each([
+    ['--timeout', ['--timeout', 'soon']],
+    ['--timeout', ['--timeout', '0']],
+    ['--timeout', ['--timeout', '-5']],
+    ['--timeout', ['--timeout', '']],
+    ['--timeout', ['--timeout', '99999999999']],
+  ])('exits 2 on a %s that is not a positive number of seconds', async (flag, extra) => {
+    const r = await run(['--api-key', 'k', '--api-url', 'https://example.invalid', ...extra]);
+    expect(r.code).toBe(2);
+    expect(r.stderr).toContain(flag);
+  });
+
+  it('exits 2 on a bad AGLEDGER_TIMEOUT, naming the variable, and starts on a good one', async () => {
+    const base = ['--api-key', 'k', '--api-url', 'https://example.invalid'];
+    const bad = await run(base, { AGLEDGER_TIMEOUT: 'abc' });
+    expect(bad.code).toBe(2);
+    expect(bad.stderr).toContain('AGLEDGER_TIMEOUT');
+    expect((await run(base, { AGLEDGER_TIMEOUT: '60' })).code).toBe(0);
+    expect((await run([...base, '--timeout', '0.5'])).code).toBe(0);
+  });
+
   it('documents --api-url as required, not optional, in --help', async () => {
     const r = await run(['--help']);
     // The usage line carried `[--api-url <url>]` for a full release after the
