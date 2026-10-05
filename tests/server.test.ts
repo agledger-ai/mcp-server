@@ -896,13 +896,27 @@ describe('agledger_verify', () => {
     expect(verdict).not.toContain('link to a trust anchor you gave');
   });
 
-  it('refuses a key both pinned and distrusted as INVALID_ARGUMENT, as the Server refuses to start with it', async () => {
+  it('refuses a pinned key distrusted with no instant as INVALID_ARGUMENT, as the Server refuses to start with it', async () => {
     const result = (await harness.client.callTool({
       name: 'agledger_verify',
       arguments: { export: engineExport(), trustAnchors: [enginePin()], distrustedKeys: [enginePin()] },
     })) as CallToolResult;
     expect(result.isError).toBe(true);
-    expect(result.structuredContent).toMatchObject({ code: 'INVALID_ARGUMENT', message: expect.stringMatching(/both a trust anchor and a distrusted key/) });
+    expect(result.structuredContent).toMatchObject({ code: 'INVALID_ARGUMENT', message: expect.stringMatching(/is a trust anchor and a distrusted key with no instant,/) });
+  });
+
+  it('takes a pin beside a dated distrust entry for the same key, and an export accounts for nothing', async () => {
+    const after = (await harness.client.callTool({
+      name: 'agledger_verify',
+      arguments: { export: engineExport(), trustAnchors: [enginePin()], distrustedKeys: [`${enginePin()}@2099-01-01T00:00:00Z`] },
+    })) as CallToolResult;
+    expect(after.isError).toBeFalsy();
+    expect(after.structuredContent).toMatchObject({ verdict: 'trusted', keyTrust: { accounted: [] } });
+    const before = (await harness.client.callTool({
+      name: 'agledger_verify',
+      arguments: { export: engineExport(), trustAnchors: [enginePin()], distrustedKeys: [`${enginePin()}@2000-01-01T00:00:00Z`] },
+    })) as CallToolResult;
+    expect(before.structuredContent).toMatchObject({ verdict: 'failed', brokenAt: { code: 'CHAIN_KEY_EXPIRED' } });
   });
 
   it('refuses a supplied key window that is not RFC 3339 as INVALID_ARGUMENT', async () => {

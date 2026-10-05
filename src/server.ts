@@ -481,7 +481,8 @@ const VERIFY_ARGS = {
     .describe(
       'Optional. The operator\'s VAULT_DISTRUSTED_KEYS entries: "sha256:<64 hex>", optionally ' +
         '"@<RFC 3339 instant>". What such a key signed from that instant (with none, from its retirement) ' +
-        'counts for nothing in the walk. Requires trustAnchors.',
+        'counts for nothing in the walk. Requires trustAnchors. A dated entry may name a key also in ' +
+        'trustAnchors, which then vouches for what that key signed before the instant; an undated one may not.',
     ),
   agentKeys: jsonStringField
     .optional()
@@ -857,7 +858,7 @@ export class AgledgerMcpServer {
             return errorResult(
               err instanceof Error ? err.message : String(err),
               'INVALID_ARGUMENT',
-              'Pin the successor of a key that leaked (its sha256 digest from the operator) and keep the leaked key in distrustedKeys.',
+              'Keep the pin and give the leaked key the instant it leaked, "sha256:<64 hex>@<RFC 3339 instant>"; or, if nothing it signed is vouched for, drop it from trustAnchors.',
             );
           }
           const anchored = trustAnchors !== undefined && trustAnchors.length > 0;
