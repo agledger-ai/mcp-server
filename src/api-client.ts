@@ -138,9 +138,11 @@ export class ApiClient {
       return this.send(url, method, headers, body);
     }
 
-    // A cert credential signs the body with the key bound to its cert. The
-    // Server records the signature in the chain entry on the routes that
-    // accept one and ignores the headers elsewhere.
+    // A cert credential signs the body with the key bound to its cert. Under
+    // cert auth the Server verifies the signature on every authenticated route
+    // and seals it into every chain entry the request writes; under any other
+    // credential it refuses the headers with 400, so only a cert credential
+    // (the one with signBody) sends them, and only with a body.
     if (body !== undefined && this.credential.signBody) {
       Object.assign(headers, this.credential.signBody(body));
     }

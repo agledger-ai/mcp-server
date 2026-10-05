@@ -57,8 +57,8 @@ provider as a trusted issuer for agents, the MCP server can run with no API key
 at all. Give it a source of OIDC tokens instead. It exchanges a token for a
 short-lived cert signed by the Server (`POST /v1/auth/oidc/cert`), presents the
 cert as its bearer, and signs each request body with an Ed25519 key that exists
-only in its own memory. The Server records that signature in the signed chain
-entry of every record the agent writes (`predicate.on_behalf_of.agent_signature`).
+only in its own memory. The Server verifies that signature and seals it into
+every chain entry the agent writes (`predicate.on_behalf_of.agent_signature`).
 Nothing is written to disk.
 
 | Env var | Description |
