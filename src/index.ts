@@ -91,9 +91,9 @@ Options:
                     var). Required: AGLedger is self-hosted, so there is no
                     default server to call.
   --timeout         Seconds to wait for each API response (or AGLEDGER_TIMEOUT
-                    env var). Default 30. A call that times out may still have
-                    been applied: retry a POST with the idempotencyKey the
-                    timeout error names, never a new one.
+                    env var). Default 30, at most 2147483. A call that times
+                    out may still have been applied: retry a POST with the
+                    idempotencyKey the timeout error names, never a new one.
   --help, -h        Show this help message
 
 Credentials: one is required. An API key wins when set; otherwise an OIDC

@@ -122,6 +122,13 @@ describe('agledger-mcp exit codes', () => {
     expect((await run([...base, '--timeout', '0.5'])).code).toBe(0);
   });
 
+  it('takes a timeout up to the 2147483 s that --help names, and refuses one past it', async () => {
+    const base = ['--api-key', 'k', '--api-url', 'https://example.invalid'];
+    expect((await run([...base, '--timeout', '2147483'])).code).toBe(0);
+    expect((await run([...base, '--timeout', '2147484'])).code).toBe(2);
+    expect((await run(['--help'])).stderr).toMatch(/Default 30, at most 2147483\./);
+  });
+
   it('documents --api-url as required, not optional, in --help', async () => {
     const r = await run(['--help']);
     // The usage line carried `[--api-url <url>]` for a full release after the
