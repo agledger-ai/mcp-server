@@ -4,6 +4,12 @@ All notable changes to the AGLedger MCP Server will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- The README says the package needs an AGLedger Server 2.0 or later and names the last release for a 1.x Server (mcp-server#35).
+
 ## [3.0.0] - 2026-10-05
 
 Targets API 2.0 only. The major version follows the API's, and is 3 because this server is at 2.x. 2.12.0 was never published; its changes are part of this release.

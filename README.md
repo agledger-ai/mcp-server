@@ -2,6 +2,8 @@
 
 The official [MCP](https://modelcontextprotocol.io) server for the [AGLedger](https://agledger.ai) API: change control for AI agents. Agent memory, approvals, audit trail, and notifications: one API, one signed ledger, self-hosted.
 
+Requires an AGLedger Server 2.0 or later. For a 1.x Server, use `@agledger/mcp-server@2.11.0`, the last release that supports it.
+
 Connects any MCP-compatible AI agent (Claude, Cursor, Windsurf, etc.) to the AGLedger API with 2 universal API-pass-through tools plus an offline audit verifier. No SDK code required. Just point your agent at this server.
 
 **Learn more**
