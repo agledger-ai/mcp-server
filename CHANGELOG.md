@@ -4,7 +4,15 @@ All notable changes to the AGLedger MCP Server will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [3.1.0] - 2026-10-22
+
+### Added
+
+- **`federationKeys` on `agledger_verify`:** a receiving Server's `FEDERATION_*` entries seal each peer message as the peer signed it (`payload.wire`); every sealed message is held to its body hash and to its entry, and one from a hub whose federation key is given is also re-verified under it. `result.federationWire` counts them and `summary` says when some were not checked; a failure is `CHAIN_FEDERATION_WIRE_INVALID`. Needs `@agledger/verify-core` 2.1.0.
+
+### Fixed
+
+- The `agledger_api` description claimed every response carries `nextSteps` and every path starts with `/v1/`. Listing pages, `GET /v1/schemas` and `GET /v1/admin/orgs` carry none, and the discovery documents and `/a2a` sit at the root; the description says so now.
 
 ### Changed
 
@@ -84,15 +92,15 @@ Targets API 2.0 only. The major version follows the API's, and is 3 because this
 
 - **A host tree holding zod 3 stripped every argument description out of the published tool contract.** `@modelcontextprotocol/sdk` declares zod as a non-optional peer across `^3.25 || ^4.0` and renders tool schemas with the copy it resolves. This package declared `zod: ^4.3.6`, so an application already holding zod 3 satisfied the SDK at the top level while npm nested a second copy of zod 4 for us. `.describe()` and `.meta()` write into zod's registry rather than onto the schema, and a registry belongs to one module instance, so the SDK looked our schemas up somewhere they had never been recorded: every argument description disappeared and `export`, `publicKeys` and `params` lost `type: string`. Nothing threw. The server started, connected and answered calls, and agents received the contract with its guidance removed. Present in published 2.9.0 and every release before it.
 
-  The fix is to stop forcing a second copy: this package now declares the same `^3.25.0 || ^4.0.0` range the SDK does, adds `zod` as a peer dependency, and imports the version-specific `zod/v4` subpath, which zod 3.25 also ships. One copy now serves both on either major. Verified end to end on three host trees (no zod, zod 4, zod 3): all resolve a single copy and publish the full contract, where the zod 3 tree previously degraded silently. Declaring the peer alone was **not** sufficient, and is worth knowing if this recurs: npm simply nested the copy to satisfy the peer. `src/zod-integrity.ts` warns on stderr at startup if a tree still resolves two different zod VERSIONS, because the failure is otherwise silent. It compares versions rather than copies deliberately: a host pinned below the `zod/v4` floor nests a private copy for each side, and with both on the same release the published contract is complete, so warning there would be a false alarm on a working install. Reported by agledger-testbed while reviewing the round-5 candidate.
+  The fix is to stop forcing a second copy: this package now declares the same `^3.25.0 || ^4.0.0` range the SDK does, adds `zod` as a peer dependency, and imports the version-specific `zod/v4` subpath, which zod 3.25 also ships. One copy now serves both on either major. Verified end to end on three host trees (no zod, zod 4, zod 3): all resolve a single copy and publish the full contract, where the zod 3 tree previously degraded silently. Declaring the peer alone was **not** sufficient, and is worth knowing if this recurs: npm simply nested the copy to satisfy the peer. `src/zod-integrity.ts` warns on stderr at startup if a tree still resolves two different zod VERSIONS, because the failure is otherwise silent. It compares versions rather than copies deliberately: a host pinned below the `zod/v4` floor nests a private copy for each side, and with both on the same release the published contract is complete, so warning there would be a false alarm on a working install. Found in pre-release validation of a release candidate.
 
-- **`agledger_verify` published its one mandatory argument as optional.** The tool advertised no `required` array at all, so every client read `export` as something it could omit. `jsonStringField` was built with `z.preprocess`, whose input is typed `unknown`; `unknown` subsumes `undefined`, so zod marked the field `optin: 'optional'` and the MCP SDK left it out of `required` when rendering the schema with `io: 'input'`. The field is now an explicit `unknown` piped through the transform, which reports required-ness correctly while still publishing as `type: string` and still accepting a native object from object-native runtimes. `agledger_api`, whose fields are plain `z.string()`, was never affected. Reported by agledger-testbed against the 2.10.0 candidate (F-982). A new `tests/tool-schema.test.ts` asserts the published `required` array of every tool, read back over a real client connection rather than from the zod, since that is where the two came apart.
+- **`agledger_verify` published its one mandatory argument as optional.** The tool advertised no `required` array at all, so every client read `export` as something it could omit. `jsonStringField` was built with `z.preprocess`, whose input is typed `unknown`; `unknown` subsumes `undefined`, so zod marked the field `optin: 'optional'` and the MCP SDK left it out of `required` when rendering the schema with `io: 'input'`. The field is now an explicit `unknown` piped through the transform, which reports required-ness correctly while still publishing as `type: string` and still accepting a native object from object-native runtimes. `agledger_api`, whose fields are plain `z.string()`, was never affected. Found in pre-release validation of the 2.10.0 candidate. A new `tests/tool-schema.test.ts` asserts the published `required` array of every tool, read back over a real client connection rather than from the zod, since that is where the two came apart.
 
 - **Object query parameters reached the wire as `[object Object]`.** The client ran every query value through `String(value)`, so `agledger_api` with `GET /v1/records/search` and a `criteria` or `metadata` filter returned 400 rather than filtering. Objects now expand into the API's bracket notation (`metadata[state]=blocked`), and a `Date` serializes as ISO-8601 rather than the JS locale form the date-time params reject. Found by driving the server against a live API.
 
 ### Changed
 
-- **The `params` description says the body is not type-coerced.** The Server stopped coercing the fields of a JSON body, and `params` is a JSON string the model writes, so the type discipline of the body is now the model's responsibility. Identifier fields (`externalTaskId`, `correlationId`, `platformRef`, `projectRef`, `publisher`) are declared `string` and frequently hold all-digit values, which is exactly the case a model is most likely to write as a bare number. The Server's 400 carries `received`, `expected`, `constraint` and `instancePath`, so the cost was a wasted turn rather than a dead end; the description now heads it off. Raised by agledger-api ahead of the engine tag (agents#123).
+- **The `params` description says the body is not type-coerced.** The Server stopped coercing the fields of a JSON body, and `params` is a JSON string the model writes, so the type discipline of the body is now the model's responsibility. Identifier fields (`externalTaskId`, `correlationId`, `platformRef`, `projectRef`, `publisher`) are declared `string` and frequently hold all-digit values, which is exactly the case a model is most likely to write as a bare number. The Server's 400 carries `received`, `expected`, `constraint` and `instancePath`, so the cost was a wasted turn rather than a dead end; the description now heads it off.
 
 - **The `agledger_api` description now covers supersession.** The ledger is append-only, so every past state keeps matching a filter forever, and an agent tracking ongoing work needs to know that `supersedesRecordId` plus `?superseded=false` is how "what is the state of my work right now" stays answerable. It also explains that `supersededByCount` above 1 is a fork with several current heads, and the difference between filtering on signed `criteria` and unsigned `metadata`.
 
@@ -118,18 +126,18 @@ Targets API 2.0 only. The major version follows the API's, and is 3 because this
 
 ### Packaging
 
-- **Source maps are no longer published.** They shipped with `sources` pointing at `../src/*.ts` and no `sourcesContent`, and `src/` is not in the tarball, so they resolved to nothing. The build no longer emits them at all, so no shipped `.js` or `.d.ts` carries a `sourceMappingURL` comment pointing at a map the tarball does not contain (agents#114).
+- **Source maps are no longer published.** They shipped with `sources` pointing at `../src/*.ts` and no `sourcesContent`, and `src/` is not in the tarball, so they resolved to nothing. The build no longer emits them at all, so no shipped `.js` or `.d.ts` carries a `sourceMappingURL` comment pointing at a map the tarball does not contain.
 - **`bugs` added to package.json.**
 
 ## [2.8.0] - 2026-08-07
 
 ### Added
 
-- **`agledger://llms.txt` resource, and `agledger_discover` now names the narrative.** An MCP-connected agent had no way to learn `/llms.txt` existed: `discover` pointed only at OpenAPI, `resources/list` offered only the spec, and the string `llms` appeared nowhere in the package. The CLI advertised it, so the one integration surface built specifically for AI agents was the one hiding the API's agent-oriented documentation. The resource fetches live from `GET /llms.txt`, so it cannot go stale (agents#110).
+- **`agledger://llms.txt` resource, and `agledger_discover` now names the narrative.** An MCP-connected agent had no way to learn `/llms.txt` existed: `discover` pointed only at OpenAPI, `resources/list` offered only the spec, and the string `llms` appeared nowhere in the package. The CLI advertised it, so the one integration surface built specifically for AI agents was the one hiding the API's agent-oriented documentation. The resource fetches live from `GET /llms.txt`, so it cannot go stale.
 
 ### Changed
 
-- **`--api-url` is now required.** The server defaulted to `https://agledger.example.com`, a placeholder that resolves nowhere, so a missing URL surfaced as a DNS failure against a host the operator never configured, on every tool call. It now refuses to start and says so. Every deployment is self-hosted, so there was no default worth having. Same defect the CLI and SDK carried (agents#105, agents#109); found while fixing agents#110, not separately filed.
+- **`--api-url` is now required.** The server defaulted to `https://agledger.example.com`, a placeholder that resolves nowhere, so a missing URL surfaced as a DNS failure against a host the operator never configured, on every tool call. It now refuses to start and says so. Every deployment is self-hosted, so there was no default worth having. Same defect the CLI and SDK carried.
 
 ## [2.7.0] - 2026-08-05
 
@@ -158,15 +166,13 @@ Security housekeeping. No tool-surface or behavior change.
 
 - Verified against a live AGLedger API v1.3.4 over the in-memory MCP transport, not just mocks: all 75 tests pass, including the 8 live integration cases covering discover, auth identity, record list and create, the structured schema-help error, and the record lifecycle.
 
-Closes cross-repo agledger-agents#101.
-
 ## [2.5.5] - 2026-07-16
 
 Docs and tooling. No tool-surface or behavior change.
 
 ### Changed
 
-- The `agledger_discover` tool description now leads with notarize (cross-repo #99); the agent-facing quickstart string previously opened with "track accountability."
+- The `agledger_discover` tool description now leads with notarize; the agent-facing quickstart string previously opened with "track accountability."
 - Removed dead vocabulary, stale naming history, and the phantom "fulfill" endpoint framing from the README and pitch text (#99).
 - Refreshed the lockfile to in-range latest (`@agledger/verify-core` 1.0.2, plus dev tooling).
 - Upgraded the TypeScript devDependency to `^7.0.2`. Build, typecheck, and tests all pass under 7.0.2.
@@ -175,7 +181,7 @@ Docs and tooling. No tool-surface or behavior change.
 
 ### Changed
 
-- Docs only: removed em-dashes from the README prose and the package.json description (cross-repo #98 writing-style sweep). Rewrote each sentence rather than swapping the glyph. No tool-surface or behavior change.
+- Docs only: removed em-dashes from the README prose and the package.json description (writing-style sweep). Rewrote each sentence rather than swapping the glyph. No tool-surface or behavior change.
 
 ## [2.5.3] - 2026-06-20
 
@@ -228,19 +234,19 @@ No functional change. First release published from CI with **build provenance** 
 
 ### Fixed
 
-- `agledger_verify` now accepts the raw `GET /v1/verification-keys` response envelope (`{data:[...], ...}`) as `publicKeys`, unwrapping `.data` automatically — the MCP analogue of the CLI's F-732 fix (F-737). An MCP agent's natural flow gets the envelope straight from `agledger_api` and has no `.data[]`-extraction step, so the most obvious independent-audit call (`requireOutOfBandKeys: true` against the `agledger_api` keys response) previously failed. The compact `{keyId: SPKI-DER-base64}` map and the bare `[{keyId, publicKey, ...}]` list still pass through untouched. Updated tool description and example.
+- `agledger_verify` now accepts the raw `GET /v1/verification-keys` response envelope (`{data:[...], ...}`) as `publicKeys`, unwrapping `.data` automatically — the MCP analogue of the CLI 0.8.7 fix. An MCP agent's natural flow gets the envelope straight from `agledger_api` and has no `.data[]`-extraction step, so the most obvious independent-audit call (`requireOutOfBandKeys: true` against the `agledger_api` keys response) previously failed. The compact `{keyId: SPKI-DER-base64}` map and the bare `[{keyId, publicKey, ...}]` list still pass through untouched. Updated tool description and example.
 
 ## [2.4.7] - 2026-05-29
 
 ### Changed
 
-- `agledger_verify` rebuilt on `@agledger/verify-core@^0.1.3`: export-path binding-integrity now fires on engine ≥ v0.26.x exports (a denormalised `payload` rewritten while `coseSign1` stays intact fails `CHAIN_PAYLOAD_BINDING_MISMATCH`, F-731), and a signature short-circuited by an upstream chain break reports `not-checked` rather than `skipped` (F-732).
+- `agledger_verify` rebuilt on `@agledger/verify-core@^0.1.3`: export-path binding-integrity now fires on engine ≥ v0.26.x exports (a denormalised `payload` rewritten while `coseSign1` stays intact fails `CHAIN_PAYLOAD_BINDING_MISMATCH`), and a signature short-circuited by an upstream chain break reports `not-checked` rather than `skipped`.
 
 ## [2.4.6] - 2026-05-28
 
 ### Changed
 
-- Republished against `@agledger/verify-core` 0.1.2 — picks up F-698 OOB-key polymorphism and the temporal-axis fix. The `agledger_verify` tool's `publicKeys` argument now accepts either the compact `{keyId: SPKI-DER-base64}` map OR the natural array shape from `GET /v1/verification-keys` (`[{keyId, publicKey, ...}]`), as a JSON-encoded string or native object/array. Malformed shapes produce the tool's standard `{code: "INVALID_JSON", suggestion}` error envelope. Updated tool description and example.
+- Republished against `@agledger/verify-core` 0.1.2 — picks up OOB-key polymorphism and the temporal-axis fix. The `agledger_verify` tool's `publicKeys` argument now accepts either the compact `{keyId: SPKI-DER-base64}` map OR the natural array shape from `GET /v1/verification-keys` (`[{keyId, publicKey, ...}]`), as a JSON-encoded string or native object/array. Malformed shapes produce the tool's standard `{code: "INVALID_JSON", suggestion}` error envelope. Updated tool description and example.
 
 ## [2.4.5] - 2026-05-28
 
@@ -262,7 +268,7 @@ Verifier consolidation (Pass 1). `agledger_verify` now runs on the shared verifi
 
 ### Fixed
 
-- **`agledger_verify` rejected valid exports (F-682).** The offline verifier read the legacy `position` field on each export entry, but current exports (v0.25+) emit `chainPosition`. With `position` absent, every valid export failed with a false `position_gap` on the first entry. Now reads `chainPosition` with a `position` fallback for pre-v0.25 exports. Verified end-to-end against a live export.
+- **`agledger_verify` rejected valid exports.** The offline verifier read the legacy `position` field on each export entry, but current exports (v0.25+) emit `chainPosition`. With `position` absent, every valid export failed with a false `position_gap` on the first entry. Now reads `chainPosition` with a `position` fallback for pre-v0.25 exports. Verified end-to-end against a live export.
 
 ## [2.4.2] - 2026-05-27
 
@@ -283,7 +289,7 @@ Tracks AGLedger API v0.24.0. MCP server is a thin pass-through, so the v0.24.0 r
 
 ## [2.4.0] - 2026-05-19
 
-Tracks AGLedger API v0.23.0. SCITT vocabulary alignment + canonical COSE_Sign1 chain envelope cutover. The MCP server is a thin pass-through, so most of the wave is API-side; the `agledger_verify` tool is rewritten to verify the new COSE_Sign1 envelope. Closes cross-repo issue agledger-agents#68.
+Tracks AGLedger API v0.23.0. SCITT vocabulary alignment + canonical COSE_Sign1 chain envelope cutover. The MCP server is a thin pass-through, so most of the wave is API-side; the `agledger_verify` tool is rewritten to verify the new COSE_Sign1 envelope.
 
 ### Changed (BREAKING — `agledger_verify` tool: format 1.0 → 2.0)
 
@@ -309,7 +315,7 @@ The three-tool surface is unchanged: `agledger_discover`, `agledger_api`, `agled
 
 ### Fixed
 
-- **Gemini-MCP integrations no longer break on the first non-trivial call.** The three free-form object fields (`agledger_api.params`, `agledger_verify.export`, `agledger_verify.publicKeys`) were emitting `additionalProperties: {}` on a properties-less OBJECT — both keywords are outside Gemini's strict OpenAPI 3.0 function-call grammar, so any non-trivial body returned `MALFORMED_FUNCTION_CALL`. Each field is now declared as a JSON-encoded `string` on the wire (Gemini-friendly) and parsed server-side. Object-native runtimes (Claude Desktop, ChatGPT MCP) keep working — the server accepts either a stringified-JSON string or a native object via a Zod preprocess. Tool descriptions document the JSON-encoded shape with examples. (testbed F-532 / agledger-agents#67)
+- **Gemini-MCP integrations no longer break on the first non-trivial call.** The three free-form object fields (`agledger_api.params`, `agledger_verify.export`, `agledger_verify.publicKeys`) were emitting `additionalProperties: {}` on a properties-less OBJECT — both keywords are outside Gemini's strict OpenAPI 3.0 function-call grammar, so any non-trivial body returned `MALFORMED_FUNCTION_CALL`. Each field is now declared as a JSON-encoded `string` on the wire (Gemini-friendly) and parsed server-side. Object-native runtimes (Claude Desktop, ChatGPT MCP) keep working — the server accepts either a stringified-JSON string or a native object via a Zod preprocess. Tool descriptions document the JSON-encoded shape with examples.
 
 ### Tests
 
@@ -319,7 +325,7 @@ The three-tool surface is unchanged: `agledger_discover`, `agledger_api`, `agled
 
 ### Fixed
 
-- **Tool results are now visible to LLM-driven MCP runtimes.** Previously every tool returned `content: []` with all data in `structuredContent`. Per MCP spec 2025-06-18, structured content SHOULD also be returned as functionally-equivalent unstructured content; LLM clients (Claude Desktop, ChatGPT MCP, Cursor, OpenAI tool-mapped runtimes) only forward `content[]` to the model, so they saw empty results and stopped. All three tools (`agledger_discover`, `agledger_api`, `agledger_verify`) now mirror `structuredContent` into a single TextContent block on every success and error path. (testbed F-531 / agledger-agents#66)
+- **Tool results are now visible to LLM-driven MCP runtimes.** Previously every tool returned `content: []` with all data in `structuredContent`. Per MCP spec 2025-06-18, structured content SHOULD also be returned as functionally-equivalent unstructured content; LLM clients (Claude Desktop, ChatGPT MCP, Cursor, OpenAI tool-mapped runtimes) only forward `content[]` to the model, so they saw empty results and stopped. All three tools (`agledger_discover`, `agledger_api`, `agledger_verify`) now mirror `structuredContent` into a single TextContent block on every success and error path.
 - **`serverInfo.version`, `User-Agent`, and `--help` banner no longer drift from `package.json`.** All three read the version from `package.json` at runtime via a shared `version.ts` module instead of duplicating the literal. v2.3.1 shipped `serverInfo.version: 2.3.0` and `User-Agent: agledger-mcp-server/2.2.0`; that class of drift is now structurally impossible.
 - **`--help` banner lists all three tools.** `agledger_verify` was missing from the Tools section.
 - **`mirrorContent` no longer pretty-prints.** The text mirror is consumed by an LLM, not a human — dropping the 2-space indent saves ~25% on agent context tokens for large paginated responses.
@@ -330,7 +336,7 @@ The three-tool surface is unchanged: `agledger_discover`, `agledger_api`, `agled
 
 ### Tests
 
-- Added `assertContentMirrorsStructured` helper and a dedicated F-531 regression suite covering success and error paths on all three tools, plus a parity test asserting `SERVER_VERSION` matches `package.json`.
+- Added `assertContentMirrorsStructured` helper and a dedicated regression suite covering success and error paths on all three tools, plus a parity test asserting `SERVER_VERSION` matches `package.json`.
 
 ## [2.3.1] - 2026-04-30
 
