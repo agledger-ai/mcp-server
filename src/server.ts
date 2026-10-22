@@ -21,6 +21,7 @@ import {
   suggestion,
   verifyAuditExport,
   type AgentPublicKeyJwk,
+  type FederationKeyEntry,
   type FailureCode,
   type RecordAuditExportInput,
   type SuppliedKeyEntry,
@@ -71,7 +72,8 @@ const QUICKSTART = {
 
 const DOCS = {
   description:
-    'Every API response includes nextSteps for self-guided workflow discovery. ' +
+    'Most API responses carry nextSteps for self-guided workflow discovery; follow them when present ' +
+    '(listings, the schema catalogue and the org listing carry none). ' +
     'Call GET /openapi.json (also exposed as the agledger://openapi resource) for the full route catalog, ' +
     'and GET /llms.txt (also exposed as the agledger://llms.txt resource) for the prose narrative ' +
     'written for agents: what the product is for, the vocabulary, and how the pieces fit together. ' +
@@ -358,6 +360,12 @@ function verifyVerdictText(result: VerifyExportResult): string {
       `${present - verified} of ${present} agent signatures were not checked: pass agentKeys with the agents' cert public keys to re-verify them.`,
     );
   }
+  const wire = result.federationWire;
+  if (wire.present > wire.verified) {
+    lines.push(
+      `${wire.present - wire.verified} of ${wire.present} sealed peer messages were hashed and matched to their entry but their peer signature was not checked: pass federationKeys with each sending hub's federation key to re-verify them.`,
+    );
+  }
   return lines.join('\n');
 }
 
@@ -391,6 +399,7 @@ const EXPORT_FAILURE_CODES = [
   'CHAIN_SIGNING_KEY_DRIFT',
   'CHAIN_ACTOR_ATTRIBUTION_MISMATCH',
   'CHAIN_AGENT_SIGNATURE_INVALID',
+  'CHAIN_FEDERATION_WIRE_INVALID',
   'CHAIN_UNSUPPORTED_ALGORITHM',
   'CHAIN_SIGNING_KEY_UNANCHORED',
   'KEY_STATEMENT_INVALID',
@@ -495,6 +504,18 @@ const VERIFY_ARGS = {
         'An entry whose sealed agent signature names one of these keys by thumbprint has that ' +
         'signature re-verified offline, and fails CHAIN_AGENT_SIGNATURE_INVALID if it does not verify. ' +
         'Without it, agent signatures are counted in result.agentSignatures but not checked.',
+    ),
+  federationKeys: jsonStringField
+    .optional()
+    .describe(
+      'Optional peer federation keys, as a JSON-encoded object \'{"<hubId>":"<key>"}\' or array ' +
+        '\'[{"hubId":"...","publicKey":"..."}]\', each key the peer Server\'s Ed25519 federation key as its ' +
+        'operator gives it (base64 SPKI DER, or base64 of the raw 32 bytes the handshake registered). ' +
+        'A receiving Server seals each peer message it accepts on the chain entry it writes (payload.wire), ' +
+        'as the peer signed it. Every sealed message is held to its body hash and to its entry; one from a ' +
+        'hub given here also has its signature re-verified under that key, which proves what the peer ' +
+        'asserted from this export alone, and fails CHAIN_FEDERATION_WIRE_INVALID if it does not verify. ' +
+        'result.federationWire counts present and verified.',
     ),
   requireKeyId: z
     .string()
@@ -644,8 +665,10 @@ export class AgledgerMcpServer {
       {
         title: 'AGLedger API',
         description:
-          'Make any AGLedger API call. All paths start with /v1/. ' +
-          'The API returns nextSteps on every response: follow them. Workflow: ' +
+          'Make any AGLedger API call. API routes live under /v1/; the discovery documents ' +
+          '(/openapi.json, /llms.txt, /llms-full.txt, /lifecycle) and /a2a sit at the root. ' +
+          'Most responses carry nextSteps: follow them when present (listing pages, GET /v1/schemas ' +
+          'and GET /v1/admin/orgs carry none). Workflow: ' +
           '1. GET /v1/schemas, list Record types. ' +
           '2. GET /v1/schemas/{type}, get required fields and examples. ' +
           '3. POST /v1/records, create a record. ' +
@@ -836,6 +859,7 @@ export class AgledgerMcpServer {
             export: exportRaw,
             publicKeys: publicKeysRaw,
             agentKeys: agentKeysRaw,
+            federationKeys: federationKeysRaw,
             trustAnchors,
             distrustedKeys,
             requireKeyId,
@@ -906,9 +930,17 @@ export class AgledgerMcpServer {
             agentKeys = decodedAgentKeys.value as AgentPublicKeyJwk[];
           }
 
+          let federationKeys: Record<string, string> | FederationKeyEntry[] | undefined;
+          if (federationKeysRaw !== undefined && federationKeysRaw !== '') {
+            const decodedFederationKeys = parseJsonObjectOrArray(federationKeysRaw, 'federationKeys');
+            if (!decodedFederationKeys.ok) return decodedFederationKeys.error;
+            federationKeys = decodedFederationKeys.value as Record<string, string> | FederationKeyEntry[];
+          }
+
           const result = verifyAuditExport(exportData as unknown as RecordAuditExportInput, {
             publicKeys,
             agentKeys,
+            federationKeys,
             requireKeyId,
             requireSuppliedKeys,
             ...(anchored ? { trustAnchors, distrustedKeys } : {}),

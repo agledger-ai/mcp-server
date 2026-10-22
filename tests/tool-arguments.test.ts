@@ -74,6 +74,41 @@ describe('undeclared tool arguments are refused, not dropped', () => {
   });
 });
 
+describe('agledger_verify federationKeys', () => {
+  let harness: TestHarness;
+  beforeAll(async () => {
+    harness = await createTestHarness();
+  });
+  afterAll(async () => {
+    await harness.cleanup();
+  });
+
+  it('refuses federationKeys that are not JSON', async () => {
+    const result = (await harness.client.callTool({
+      name: 'agledger_verify',
+      arguments: { export: '{"exportFormatVersion":"2.0","entries":[]}', federationKeys: 'hub-b=key' },
+    })) as CallToolResult;
+    expect(result.isError).toBe(true);
+    const sc = result.structuredContent as Record<string, unknown>;
+    expect(sc.code).toBe('INVALID_JSON');
+    expect(String(sc.message)).toContain('federationKeys');
+  });
+
+  it('passes federationKeys to verify-core, which refuses a key that is not an Ed25519 key', async () => {
+    const result = (await harness.client.callTool({
+      name: 'agledger_verify',
+      arguments: {
+        export: '{"exportMetadata":{"recordId":"r"},"entries":[]}',
+        federationKeys: '{"hub-b":"not-a-key"}',
+      },
+    })) as CallToolResult;
+    expect(result.isError).toBe(true);
+    const sc = result.structuredContent as Record<string, unknown>;
+    expect(sc.code).toBe('INVALID_ARGUMENT');
+    expect(String(sc.message)).toContain('not an Ed25519 public key');
+  });
+});
+
 describe('agledger_verify agentKeys', () => {
   let harness: TestHarness;
   beforeAll(async () => {
