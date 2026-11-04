@@ -360,13 +360,27 @@ function verifyVerdictText(result: VerifyExportResult): string {
       `${present - verified} of ${present} agent signatures were not checked: pass agentKeys with the agents' cert public keys to re-verify them.`,
     );
   }
-  const wire = result.federationWire;
-  if (wire.present > wire.verified) {
+  lines.push(...peerMessageLines(result.federationWire));
+  return lines.join('\n');
+}
+
+/**
+ * The summary lines on the sealed federation messages. `failed` ones failed a
+ * check (a key given for the hub that did not match among them); the rest of
+ * the unverified ones came from a hub no key was given for.
+ */
+export function peerMessageLines(wire: { present: number; verified: number; failed: number }): string[] {
+  const lines: string[] = [];
+  if (wire.failed > 0) {
+    lines.push(`${wire.failed} of ${wire.present} sealed peer messages failed CHAIN_FEDERATION_WIRE_INVALID.`);
+  }
+  const noKey = wire.present - wire.verified - wire.failed;
+  if (noKey > 0) {
     lines.push(
-      `${wire.present - wire.verified} of ${wire.present} sealed peer messages were hashed and matched to their entry but their peer signature was not checked: pass federationKeys with each sending hub's federation key to re-verify them.`,
+      `${noKey} of ${wire.present} sealed peer messages were hashed and matched to their entry but their peer signature was not checked: pass federationKeys with each sending hub's federation key to re-verify them.`,
     );
   }
-  return lines.join('\n');
+  return lines;
 }
 
 /**
@@ -515,7 +529,7 @@ const VERIFY_ARGS = {
         'as the peer signed it. Every sealed message is held to its body hash and to its entry; one from a ' +
         'hub given here also has its signature re-verified under that key, which proves what the peer ' +
         'asserted from this export alone, and fails CHAIN_FEDERATION_WIRE_INVALID if it does not verify. ' +
-        'result.federationWire counts present and verified.',
+        'result.federationWire counts present, verified and failed.',
     ),
   requireKeyId: z
     .string()

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { createTestHarness, type TestHarness } from './harness.js';
+import { peerMessageLines } from '../src/server.js';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -144,5 +145,18 @@ describe('agledger_verify agentKeys', () => {
     const sc = result.structuredContent as Record<string, unknown>;
     expect(sc.code).toBe('INVALID_ARGUMENT');
     expect(String(sc.message)).toMatch(/Ed25519/);
+  });
+});
+
+describe('agledger_verify peer-message summary', () => {
+  it('says a key that did not match failed, not that no key was given', () => {
+    expect(peerMessageLines({ present: 0, verified: 0, failed: 0 })).toEqual([]);
+    expect(peerMessageLines({ present: 2, verified: 2, failed: 0 })).toEqual([]);
+    expect(peerMessageLines({ present: 5, verified: 0, failed: 5 })).toEqual([
+      '5 of 5 sealed peer messages failed CHAIN_FEDERATION_WIRE_INVALID.',
+    ]);
+    const mixed = peerMessageLines({ present: 5, verified: 1, failed: 2 });
+    expect(mixed[0]).toBe('2 of 5 sealed peer messages failed CHAIN_FEDERATION_WIRE_INVALID.');
+    expect(mixed[1]).toMatch(/^2 of 5 sealed peer messages were hashed and matched to their entry but their peer signature was not checked/);
   });
 });

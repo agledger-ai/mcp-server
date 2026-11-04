@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
-- **`federationKeys` on `agledger_verify`:** a receiving Server's `FEDERATION_*` entries seal each peer message as the peer signed it (`payload.wire`); every sealed message is held to its body hash and to its entry, and one from a hub whose federation key is given is also re-verified under it. `result.federationWire` counts them and `summary` says when some were not checked; a failure is `CHAIN_FEDERATION_WIRE_INVALID`. Needs `@agledger/verify-core` 2.1.0.
+- **`federationKeys` on `agledger_verify`:** a receiving Server's `FEDERATION_*` entries seal each peer message as the peer signed it (`payload.wire`); every sealed message is held to its body hash and to its entry, and one from a hub whose federation key is given is also re-verified under it. `result.federationWire` counts them (`present`, `verified`, `failed`) and `summary` names the failures apart from the messages from a hub no key was given for; a failure is `CHAIN_FEDERATION_WIRE_INVALID`. Needs `@agledger/verify-core` 2.1.0.
 
 ### Fixed
 
@@ -173,7 +173,7 @@ Docs and tooling. No tool-surface or behavior change.
 ### Changed
 
 - The `agledger_discover` tool description now leads with notarize; the agent-facing quickstart string previously opened with "track accountability."
-- Removed dead vocabulary, stale naming history, and the phantom "fulfill" endpoint framing from the README and pitch text (#99).
+- Removed dead vocabulary, stale naming history, and the phantom "fulfill" endpoint framing from the README and pitch text.
 - Refreshed the lockfile to in-range latest (`@agledger/verify-core` 1.0.2, plus dev tooling).
 - Upgraded the TypeScript devDependency to `^7.0.2`. Build, typecheck, and tests all pass under 7.0.2.
 
