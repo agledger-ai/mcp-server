@@ -8,363 +8,290 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
-- **`federationKeys` on `agledger_verify`:** a receiving Server's `FEDERATION_*` entries seal each peer message as the peer signed it (`payload.wire`); every sealed message is held to its body hash and to its entry, and one from a hub whose federation key is given is also re-verified under it. `result.federationWire` counts them (`present`, `verified`, `failed`) and `summary` names the failures apart from the messages from a hub no key was given for; a failure is `CHAIN_FEDERATION_WIRE_INVALID`. Needs `@agledger/verify-core` 2.1.0.
+- **`federationKeys` on `agledger_verify`:** verifies the peer messages a receiving Server seals from federation, against the keys you supply. `result.federationWire` reports `present`, `verified` and `failed` counts, and a failure is `CHAIN_FEDERATION_WIRE_INVALID`. Requires `@agledger/verify-core` 2.1.0.
 
 ### Fixed
 
-- The `agledger_api` description claimed every response carries `nextSteps` and every path starts with `/v1/`. Listing pages, `GET /v1/schemas` and `GET /v1/admin/orgs` carry none, and the discovery documents and `/a2a` sit at the root; the description says so now.
+- The `agledger_api` description now states that listing pages, `GET /v1/schemas` and `GET /v1/admin/orgs` carry no `nextSteps`, and that the discovery documents and `/a2a` sit at the root rather than under `/v1/`.
 
 ### Changed
 
-- The README says the package needs an AGLedger Server 2.0 or later and names the last release for a 1.x Server (mcp-server#35).
+- The README states that the package needs an AGLedger Server 2.0 or later and names the last release for a 1.x Server.
 
 ## [3.0.0] - 2026-10-05
 
-Targets API 2.0 only. The major version follows the API's, and is 3 because this server is at 2.x. 2.12.0 was never published; its changes are part of this release.
+Targets API 2.0 only.
 
 ### Breaking
 
-- **`agledger_verify` takes `requireSuppliedKeys`, not `requireOutOfBandKeys`.** A key the Server serves at `/v1/verification-keys` comes from the same database as the export, so "out of band" promised an independence the argument never gave. Behaviour is unchanged, and the old name is refused as an unknown argument. In the result, `keyProvenance.outOfBand` is `keyProvenance.supplied`, `optionalChecks` carries `key_anchoring`, and every result carries `keyTrust`.
-- **`agledger_verify` reports a verdict, as `@agledger/verify` and `agledger verify` do.** `structuredContent` carries `verdict` beside verify-core's result: `trusted` when the chain is valid and `keyTrust.status` is `walked`, `failed` when it is not valid, and `unanchored` otherwise. The one text block mirrors `structuredContent` as JSON, which also carries `summary`: the verdict in the other verifiers' words (`Verdict: PASS`, `Verdict: VERIFIED, NOT ANCHORED`, `Verdict: FAIL`) with the next step, worded from `valid` and `keyTrust.status` only. `verdict` is the one `@agledger/verify-core` now puts on its result. An unanchored result says it is not a trusted verdict, and `isError` stays false for it. It is unanchored in two cases: without `trustAnchors` (`keyTrust.status` `no_anchor`), where the text names the key the export claims as its Server's (`exportMetadata.anchoredFrom`, which is not an anchor) and says to call the tool again with a pin; and when the pin was walked but no signature verified under a key it anchors (`no_anchored_signature`), as for an export of unsigned entries pinned on any key. Entries that carry no signature are named as covered by the hash chain only, and agent signatures left unchecked are counted.
+- **`agledger_verify` takes `requireSuppliedKeys`, not `requireOutOfBandKeys`.** Behavior is unchanged, but the old name is refused as an unknown argument. In the result, `keyProvenance.outOfBand` is now `keyProvenance.supplied`, `optionalChecks` carries `key_anchoring`, and every result carries `keyTrust`.
+- **`agledger_verify` reports a verdict, as `@agledger/verify` and `agledger verify` do.** `structuredContent` carries `verdict`: `trusted` when the chain is valid and `keyTrust.status` is `walked`, `failed` when it is not valid, and `unanchored` otherwise. The text block mirrors `structuredContent` as JSON and adds a `summary` (`Verdict: PASS`, `Verdict: VERIFIED, NOT ANCHORED` or `Verdict: FAIL`) with the next step. An unanchored result is not a trusted verdict and `isError` stays false for it. Pass `trustAnchors` to get a trusted verdict.
 
 ### Added
 
-- **`agledger_verify` takes `trustAnchors` and `distrustedKeys`**, through `@agledger/verify-core` 2.0.0. `trustAnchors` is the SPKI digests (`sha256:<hex>`) of vault keys the operator took out of band; the signed key statements the export carries, plus the `statements` on keys passed as `publicKeys`, are walked from them. An entry signed by a key the walk does not reach fails `CHAIN_SIGNING_KEY_UNANCHORED`, and a statement that does not hold fails at position 0 with `KEY_STATEMENT_INVALID`, `KEY_CLOSURE_INVALID` or `CHAIN_KEY_WINDOW_DRIFT`; the tool description names all four, and the compile-time check that it names every export code now covers `KEY_*`. `distrustedKeys` takes the operator's `VAULT_DISTRUSTED_KEYS` entries; without `trustAnchors` it is refused (`INVALID_ARGUMENT`) rather than ignored, as is a malformed digest and a pinned key distrusted with no instant, which the Server refuses to start with. A pin beside a dated entry for the same key (`sha256:<hex>@<instant>`) is taken and vouches for what the key signed before the instant; an export accounts for nothing a distrusted key signed (`keyTrust.accounted` is empty), so such entries fail. Any other input verify-core refuses (a supplied key window that is not RFC 3339, an agent key that is not an Ed25519 JWK) is `INVALID_ARGUMENT` rather than `VERIFY_FAILED`. Both publish as flat string arrays. Every export vector in the API 2.0 conformance corpus was driven through the packed server over stdio, unpinned and pinned on the key the export names. Unpinned, each returned its manifest's expected result, a pass as `unanchored` and a failure as `failed` with the manifest's code. Pinned, every failing vector fails with the same code and every passing vector is `trusted`, with two exceptions that are correct: `key-substitution.json` fails `CHAIN_SIGNING_KEY_UNANCHORED` on the substituted key, and `unsigned.json`, which names no Server key and carries no signature to anchor, is `unanchored` (`no_anchored_signature`) pinned on any key.
-
-- **`agledger_verify` names the distrust entry an export says the Server applied.** An API 2.0 export lists a key the Server's `VAULT_DISTRUSTED_KEYS` names with `distrustedFrom` in `exportMetadata.signingKeyWindows`, which verify-core reads: where that entry cut the listed retirement and the call did not pass the same `distrustedKeys` entry, the `CHAIN_KEY_WINDOW_DRIFT` (or `KEY_CLOSURE_INVALID`) finding names the entry (`distrustedKeys sha256:<hex>@<distrustedFrom>`) to confirm with the Server's operator rather than reading as a rewritten column, says when the given entry carries another instant, and an earlier given instant is a `Key note:` in `summary`. The verdict is as before. The wording names `distrustedKeys` and `trustAnchors`, which are this tool's own argument names.
-- **`agledger_verify` reports an unsigned entry written while the vault was signing.** An entry with no signing key fails with the new `CHAIN_ENTRY_UNSIGNED` when an earlier entry in its chain names a key, or when it was written at or after the earliest activation time among the keys the verifier holds. An unsigned history written before the first key stays reduced coverage, as before. An entry that names a key but carries an all-zero signature now fails `CHAIN_SIGNATURE_INVALID`. Both match the Server's own chain verification.
+- **`trustAnchors` and `distrustedKeys` on `agledger_verify`.** `trustAnchors` takes SPKI digests (`sha256:<hex>`) of vault keys you obtained out of band, and the signed key statements in the export are walked from them. An entry signed by a key the walk does not reach fails `CHAIN_SIGNING_KEY_UNANCHORED`, and a statement that does not hold fails with `KEY_STATEMENT_INVALID`, `KEY_CLOSURE_INVALID` or `CHAIN_KEY_WINDOW_DRIFT`. `distrustedKeys` takes your `VAULT_DISTRUSTED_KEYS` entries and requires `trustAnchors`; a pin may carry a date (`sha256:<hex>@<instant>`) to vouch for what the key signed before that instant. Invalid input is refused with `INVALID_ARGUMENT`. Requires `@agledger/verify-core` 2.0.0.
+- **`agledger_verify` names the distrust entry an export says the Server applied.** When an API 2.0 export lists a distrusted key and your call did not pass the matching `distrustedKeys` entry, the `CHAIN_KEY_WINDOW_DRIFT` or `KEY_CLOSURE_INVALID` finding names the entry to confirm with the Server's operator.
+- **`agledger_verify` reports an unsigned entry written while the vault was signing.** Such an entry fails with the new `CHAIN_ENTRY_UNSIGNED`, and an entry that names a key but carries an all-zero signature fails `CHAIN_SIGNATURE_INVALID`. Both match the Server's own chain verification.
 
 ### Changed
 
-- **A timeout names the key to retry with, and `--timeout` exists.** The `TIMEOUT` error told an agent to retry the same request and to raise `--timeout`, which the binary rejected as an unknown option; the retry then created a second record, because the generated `Idempotency-Key` was never shown. A POST that times out, or whose connection fails, now returns the key it sent as `idempotencyKey` and says to retry with that exact key. A request with no key (any other method) says so rather than naming one. `--timeout <seconds>` (or `AGLEDGER_TIMEOUT`) sets the wait for each response, default 30, and anything but a positive number up to 2147483 exits 2.
-- **A malformed API URL refuses startup.** An `--api-url` or `AGLEDGER_API_URL` that is not an absolute `http` or `https` URL (`not-a-url`, or `localhost:3000` with no scheme) exits 2 before the server accepts a connection, naming where the URL came from, like the other configuration refusals. It used to start, exit 0 on EOF, and leave every tool call to fail.
-- `agledger_verify` walks an export's key statements in write order (`createdAt`, then `id`), which every API 2.0 export carries, so the key-anchoring findings name the statement row, and a trusted key's later admissions date its window as the Server's do. The write times decide only the order: they are not signed, so a key statement signed by a key in `distrustedKeys` counts for nothing whatever time it carries. A statement that counts for nothing only because its signer is distrusted, dated before the cutoff by the export's own unsigned write time, is a `keyTrust.notes` entry rather than a finding, so an honest rotation away from a key distrusted after it still passes pinned on its successor. The verdict text lists each note as `Key note:`.
-- **A refused OIDC cert exchange reports the Server's `detail`.** API 2.0 removed the top-level `message` from every RFC 9457 error body, leaving `detail` as the one human-readable field. The exchange error read `message`, so against a 2.0 Server an expired or unbound token surfaced as "returned 401" with the Server's reason gone (mcp-server#33). It now reads `detail`. The error body is still forwarded to the tool result as the Server sent it, scrubbed of the token. The server's own errors (`{error, message, code, suggestion}`) keep their `message`; they are not API bodies.
-- **The README says the Server verifies the body signature on every authenticated route** under cert auth and seals it into every chain entry the request writes, rather than recording it on some routes and ignoring it elsewhere (mcp-server#34). The server sends `X-Agent-Signature` only with the OIDC cert credential and only on a request with a body, since the Server refuses the headers with 400 under any other credential (an API key, or an admin or platform OIDC bearer).
-- **`AGLEDGER_OIDC_AGENT_ID` is documented as an assertion, not a choice of agent.** The Server binds a cert to the agent the token names (a mapped `agent_id` claim, else the agent carrying the token's `oidcIss`/`oidcSub`, else an auto-provisioned one), and never to one the request body chooses. When `AGLEDGER_OIDC_AGENT_ID` names a different agent, or the token binds none, the exchange is refused with 403 `CERT_AGENT_BINDING_MISMATCH`; a token bound to a federation shadow agent is refused with 403 `SHADOW_AGENT_CERT_FORBIDDEN`. `--help` and the README now say so, and point at binding the agent instead: `PATCH /v1/agents/{id}` with `oidcIss` and `oidcSub`, or `claimMapping.agent_id` on the trusted issuer. The server still sends the id when it is set, and the refusal reaches the tool result as `OIDC_EXCHANGE_FAILED` with the Server's status, error body, and `recoveryHint` as the `suggestion`, as it did before.
+- **A timeout returns the key to retry with, and `--timeout` exists.** A POST that times out or loses its connection returns the `Idempotency-Key` it sent as `idempotencyKey`; retry with that exact key to avoid creating a second record. `--timeout <seconds>` (or `AGLEDGER_TIMEOUT`) sets the wait for each response, default 30; anything other than a positive number up to 2147483 exits 2.
+- **A malformed API URL refuses startup.** An `--api-url` or `AGLEDGER_API_URL` that is not an absolute `http` or `https` URL exits 2 before the server accepts a connection, and names where the URL came from.
+- `agledger_verify` walks an export's key statements in write order (`createdAt`, then `id`). A statement that counts for nothing only because its signer is distrusted and dated before the cutoff is reported as a `keyTrust.notes` entry (`Key note:` in the verdict text) rather than a finding.
+- **A refused OIDC cert exchange reports the Server's `detail`.** API 2.0 error bodies carry `detail` rather than a top-level `message`, and the exchange error now reads it.
+- **Documentation: body signatures under cert auth.** The README states that the Server verifies the body signature on every authenticated route under cert auth and seals it into each chain entry the request writes. The server sends `X-Agent-Signature` only with the OIDC cert credential and only on a request with a body.
+- **Documentation: `AGLEDGER_OIDC_AGENT_ID` is an assertion, not a choice of agent.** The Server binds a cert to the agent the token names. If `AGLEDGER_OIDC_AGENT_ID` names a different agent, or the token binds none, the exchange is refused with 403 `CERT_AGENT_BINDING_MISMATCH`; a token bound to a federation shadow agent is refused with 403 `SHADOW_AGENT_CERT_FORBIDDEN`. Bind the agent with `PATCH /v1/agents/{id}` (`oidcIss` and `oidcSub`) or `claimMapping.agent_id` on the trusted issuer.
 
 ## [2.11.0] - 2026-09-21
 
 ### Added
 
-- **`agledger_verify` refuses a re-attributed export.** The `actorId`, `actorRole` and `actorOwnerId` an export displays are signature-covered, and they are now cross-checked against the signed actor claim, so an export re-attributed to another actor fails with the new `CHAIN_ACTOR_ATTRIBUTION_MISMATCH` instead of verifying. Requires `@agledger/verify-core` 1.5.0.
-- **The server can authenticate with an OIDC token instead of an API key** (#30). Set `AGLEDGER_OIDC_TOKEN_FILE` (a file holding the token, such as a Kubernetes projected service-account token) or `AGLEDGER_OIDC_TOKEN_CMD` (a shell command that prints one), plus `AGLEDGER_OIDC_AGENT_ID` if the cert should bind to a specific agent. The server generates an Ed25519 key pair in memory, exchanges the token for a short-lived cert signed by the Server (`POST /v1/auth/oidc/cert`) and presents the cert as its bearer. No long-lived secret sits in the MCP client configuration, and nothing is written to disk. An API key still wins when one is set, then the command, then the file; the server prints a note naming any source it ignores.
-
-  - The token source is consulted on every exchange: the file is re-read and the command re-run, because the Server exchanges a given token id (`jti`) only once and a projected token is rotated on disk under a running process. A file that still holds the token already exchanged is recognised locally and not sent, so an unrotated file costs no request and no warning while the current cert is valid, and produces an error naming the rotation interval once the cert has expired.
-  - The cert is re-exchanged once half its lifetime has passed, measured from when it was received so clock skew cannot shorten or stretch it. Concurrent tool calls share one exchange. A refresh that fails while the current cert is still valid keeps it and prints one warning on stderr.
-  - A 401 on a cert bearer (a revoked cert) forces exactly one re-exchange and one retry of the request, with the same body bytes and the same `Idempotency-Key`. A second 401 is returned as the answer.
-  - Every request body is signed with the key bound to the cert (`X-Agent-Signature-Content-Hash` and `X-Agent-Signature`), so the Server records the agent's own signature in the chain entry (`predicate.on_behalf_of.agent_signature`) on the routes that accept one.
-  - A failed exchange reaches the tool result as `code: OIDC_EXCHANGE_FAILED` with the Server's status, error body and `recoveryHint`; a token source that cannot produce a token is `OIDC_TOKEN_SOURCE_FAILED`. Tokens are scrubbed from both, and a failing command's stderr is included with anything shaped like a JWT removed. The command text itself is never echoed, since it can carry a secret of its own.
-  - A token command (`AGLEDGER_OIDC_TOKEN_CMD`, and `AGLEDGER_ON_BEHALF_OF_CMD` below) runs in its own process group, and the whole group is killed when the command times out after 60 seconds, prints more than 64 KiB, or exits, so a pipeline or a helper it forks cannot outlive the call and pile up across refreshes in a long-running server.
-  - `agledger_discover` fetches `/health` without a credential, so "is the Server up" stays answerable when the credential is what is broken.
-  - `--help` and the no-credential startup error list all three credential sources. A token file that cannot be read exits 2 at startup rather than failing on the first tool call.
-
-- **The server can act on behalf of a person or another party.** `AGLEDGER_ON_BEHALF_OF_CMD` (a shell command) or `AGLEDGER_ON_BEHALF_OF_FILE` names an RFC 8693 delegation token, which the server sends as `AGLedger-On-Behalf-Of` on every POST; every route that declares the header is a POST. The token comes from the process and never from a tool argument, so a model can neither read nor forge it, and `agledger_discover` reports only whether a delegation is configured and its source. The command wins over the file. A delegation token is not single use, so it is kept until its `exp` (less 30 seconds) and read again after that, or once when the Server answers 401 about the delegation, after which the request is retried a single time; an already-expired token is refused before anything is sent. It is scrubbed from every error and tool result, including a Server response that echoes it. With the OIDC cert credential the Server records the delegation `bound` to the agent's own identity; with an API key, `unbound`.
-
-- **`agledger_verify` takes `agentKeys`**, the Ed25519 public keys (JWKs) of agent certs. An entry whose sealed agent signature names one of them by thumbprint has that signature re-verified offline, and a failure is the new `CHAIN_AGENT_SIGNATURE_INVALID`. Without it, the result counts agent signatures in `agentSignatures` without checking them. Requires `@agledger/verify-core` 1.5.0.
+- **`agledger_verify` refuses a re-attributed export.** The `actorId`, `actorRole` and `actorOwnerId` an export displays are cross-checked against the signed actor claim, and a mismatch fails with the new `CHAIN_ACTOR_ATTRIBUTION_MISMATCH`. Requires `@agledger/verify-core` 1.5.0.
+- **The server can authenticate with an OIDC token instead of an API key.** Set `AGLEDGER_OIDC_TOKEN_FILE` (a file holding the token, such as a Kubernetes projected service-account token) or `AGLEDGER_OIDC_TOKEN_CMD` (a shell command that prints one), plus `AGLEDGER_OIDC_AGENT_ID` to bind the cert to a specific agent. The server generates an Ed25519 key pair in memory, exchanges the token for a short-lived cert (`POST /v1/auth/oidc/cert`) and presents the cert as its bearer, so no long-lived secret sits in the MCP client configuration. An API key wins when set, then the command, then the file; the server prints a note naming any source it ignores.
+  - The token source is read on every exchange, and the cert is re-exchanged once half its lifetime has passed. A 401 on a cert forces one re-exchange and one retry with the same body and `Idempotency-Key`.
+  - Every request body is signed with the key bound to the cert (`X-Agent-Signature-Content-Hash` and `X-Agent-Signature`), so the Server records the agent's own signature in the chain entry on the routes that accept one.
+  - A failed exchange returns `OIDC_EXCHANGE_FAILED` with the Server's status, error body and `recoveryHint`; a token source that cannot produce a token returns `OIDC_TOKEN_SOURCE_FAILED`. Tokens are scrubbed from both.
+  - A token command runs in its own process group and is killed on a 60-second timeout or more than 64 KiB of output.
+  - `agledger_discover` fetches `/health` without a credential. A token file that cannot be read exits 2 at startup.
+- **The server can act on behalf of a person or another party.** `AGLEDGER_ON_BEHALF_OF_CMD` (a shell command) or `AGLEDGER_ON_BEHALF_OF_FILE` names an RFC 8693 delegation token, which the server sends as `AGLedger-On-Behalf-Of` on every POST. The token comes from the process, never from a tool argument, and is scrubbed from every error and tool result. `agledger_discover` reports only whether a delegation is configured and its source. With the OIDC cert credential the Server records the delegation as `bound` to the agent's identity; with an API key, as `unbound`.
+- **`agledger_verify` takes `agentKeys`**, the Ed25519 public keys (JWKs) of agent certs. An entry whose sealed agent signature names one of them has that signature re-verified offline, and a failure is the new `CHAIN_AGENT_SIGNATURE_INVALID`. Without it, `agentSignatures` counts the signatures without checking them. Requires `@agledger/verify-core` 1.5.0.
 
 ### Fixed
 
-- **An argument a tool does not declare is refused instead of dropped** (#29). `agledger_api` called with `body` in place of `params` sent the request with no payload, and the agent read the Server's `body must be object` as a problem with its payload rather than with the argument name. Each tool now answers an undeclared argument with `code: UNKNOWN_ARGUMENT`, naming the argument and the ones it accepts, before anything is sent. The published tool schemas are unchanged: required arguments stay required, every description is intact, and no `additionalProperties` keyword appears, which `tests/tool-schema.test.ts` asserts on the `tools/list` document.
-
-- **The `agledger_api` description pointed agents at a field the Server does not send.** It said to read `suggestion` on a failed call; the Server's error bodies carry `recoveryHint`. The description and the README now name `recoveryHint` for Server errors and `suggestion` for errors the tool raises itself.
-
-- **The `agledger_verify` description listed 16 of the 19 failure codes an audit export can produce.** `CHAIN_OIDC_ACTOR_MISMATCH`, `CHAIN_KEY_EXPIRED` and `CHAIN_KEY_NOT_YET_ACTIVE` were missing. The list is now checked against `@agledger/verify-core`'s `FailureCode` union at compile time, so a new code there fails the build here until the description carries it.
+- **An argument a tool does not declare is refused.** Each tool answers an undeclared argument with `code: UNKNOWN_ARGUMENT`, naming the argument and the ones it accepts, before anything is sent. For example, `agledger_api` called with `body` instead of `params` now says so.
+- The `agledger_api` description and the README name `recoveryHint` as the field to read on Server errors, and `suggestion` for errors the tool raises itself.
+- The `agledger_verify` description now lists all 19 failure codes an audit export can produce, including `CHAIN_OIDC_ACTOR_MISMATCH`, `CHAIN_KEY_EXPIRED` and `CHAIN_KEY_NOT_YET_ACTIVE`.
 
 ### Changed
 
-- `LICENSE` follows SDK License Template 1.9: section 1 says AGLedger LLC does not receive, inspect or use the data you process through your deployment and collects no product usage information from it; section 7 names AGLedger and Settlement Signal as trademarks of AGLedger LLC; section 8 refers to issued or pending U.S. patents.
-- The README states what AGLedger is in current terms: agent memory, approvals, audit trail and notifications on one API and one signed ledger, self-hosted.
+- `LICENSE` follows SDK License Template 1.9.
+- The README describes AGLedger as agent memory, approvals, audit trail and notifications on one API and one signed ledger, self-hosted.
 
 ## [2.10.1] - 2026-09-10
 
 ### Changed
 
-- **LICENSE section 6 names the ciphers this package line ships**: Ed25519 (EdDSA), ECDSA P-256 with SHA-256, HMAC-SHA-256, AES-256-GCM, HKDF-SHA-256 and SHA-256. X25519 is gone from the list with the federation encryption key the engine no longer has. The LICENSE file is the only shipped byte that moved.
+- `LICENSE` section 6 names the ciphers this package line ships: Ed25519 (EdDSA), ECDSA P-256 with SHA-256, HMAC-SHA-256, AES-256-GCM, HKDF-SHA-256 and SHA-256. No other files changed.
 
 ## [2.10.0] - 2026-08-21
 
 ### Added
 
-- **An `idempotencyKey` argument on `agledger_api`, and a generated key on every POST.** The server could not send an `Idempotency-Key` at all, so an agent retrying a tool call after a timeout notarized the same work twice. Every POST now carries a generated key, which makes a single call replay-safe on its own. An agent retrying a call that may already have reached the Server passes the key it used the first time, and the Server returns the original result instead of creating a second record. The key binds to method, route and body, so a retry that changes the body is rejected rather than silently replaying the old response. Scoped to POST because that is what the engine arms: all 18 routes that opt into idempotency are POST, and the header is ignored elsewhere.
+- **An `idempotencyKey` argument on `agledger_api`, and a generated key on every POST.** To retry a call that may already have reached the Server, pass the key used the first time and the Server returns the original result instead of creating a second record. The key binds to method, route and body, so a retry with a changed body is rejected.
 
 ### Fixed
 
-- **A host tree holding zod 3 stripped every argument description out of the published tool contract.** `@modelcontextprotocol/sdk` declares zod as a non-optional peer across `^3.25 || ^4.0` and renders tool schemas with the copy it resolves. This package declared `zod: ^4.3.6`, so an application already holding zod 3 satisfied the SDK at the top level while npm nested a second copy of zod 4 for us. `.describe()` and `.meta()` write into zod's registry rather than onto the schema, and a registry belongs to one module instance, so the SDK looked our schemas up somewhere they had never been recorded: every argument description disappeared and `export`, `publicKeys` and `params` lost `type: string`. Nothing threw. The server started, connected and answered calls, and agents received the contract with its guidance removed. Present in published 2.9.0 and every release before it.
-
-  The fix is to stop forcing a second copy: this package now declares the same `^3.25.0 || ^4.0.0` range the SDK does, adds `zod` as a peer dependency, and imports the version-specific `zod/v4` subpath, which zod 3.25 also ships. One copy now serves both on either major. Verified end to end on three host trees (no zod, zod 4, zod 3): all resolve a single copy and publish the full contract, where the zod 3 tree previously degraded silently. Declaring the peer alone was **not** sufficient, and is worth knowing if this recurs: npm simply nested the copy to satisfy the peer. `src/zod-integrity.ts` warns on stderr at startup if a tree still resolves two different zod VERSIONS, because the failure is otherwise silent. It compares versions rather than copies deliberately: a host pinned below the `zod/v4` floor nests a private copy for each side, and with both on the same release the published contract is complete, so warning there would be a false alarm on a working install. Found in pre-release validation of a release candidate.
-
-- **`agledger_verify` published its one mandatory argument as optional.** The tool advertised no `required` array at all, so every client read `export` as something it could omit. `jsonStringField` was built with `z.preprocess`, whose input is typed `unknown`; `unknown` subsumes `undefined`, so zod marked the field `optin: 'optional'` and the MCP SDK left it out of `required` when rendering the schema with `io: 'input'`. The field is now an explicit `unknown` piped through the transform, which reports required-ness correctly while still publishing as `type: string` and still accepting a native object from object-native runtimes. `agledger_api`, whose fields are plain `z.string()`, was never affected. Found in pre-release validation of the 2.10.0 candidate. A new `tests/tool-schema.test.ts` asserts the published `required` array of every tool, read back over a real client connection rather than from the zod, since that is where the two came apart.
-
-- **Object query parameters reached the wire as `[object Object]`.** The client ran every query value through `String(value)`, so `agledger_api` with `GET /v1/records/search` and a `criteria` or `metadata` filter returned 400 rather than filtering. Objects now expand into the API's bracket notation (`metadata[state]=blocked`), and a `Date` serializes as ISO-8601 rather than the JS locale form the date-time params reject. Found by driving the server against a live API.
+- **Tool argument descriptions are published when the host already has zod 3.** The package now declares `zod` as a peer dependency with the same `^3.25.0 || ^4.0.0` range as `@modelcontextprotocol/sdk` and imports the `zod/v4` subpath, so a single copy of zod serves both. The server warns on stderr at startup if a dependency tree still resolves two different zod versions.
+- **`agledger_verify` publishes `export` as a required argument.** The tool schema now lists it in `required`.
+- **Object query parameters are sent correctly.** `agledger_api` with `GET /v1/records/search` and a `criteria` or `metadata` filter now expands objects into bracket notation (`metadata[state]=blocked`), and a `Date` serializes as ISO-8601.
 
 ### Changed
 
-- **The `params` description says the body is not type-coerced.** The Server stopped coercing the fields of a JSON body, and `params` is a JSON string the model writes, so the type discipline of the body is now the model's responsibility. Identifier fields (`externalTaskId`, `correlationId`, `platformRef`, `projectRef`, `publisher`) are declared `string` and frequently hold all-digit values, which is exactly the case a model is most likely to write as a bare number. The Server's 400 carries `received`, `expected`, `constraint` and `instancePath`, so the cost was a wasted turn rather than a dead end; the description now heads it off.
-
-- **The `agledger_api` description now covers supersession.** The ledger is append-only, so every past state keeps matching a filter forever, and an agent tracking ongoing work needs to know that `supersedesRecordId` plus `?superseded=false` is how "what is the state of my work right now" stays answerable. It also explains that `supersededByCount` above 1 is a fork with several current heads, and the difference between filtering on signed `criteria` and unsigned `metadata`.
-
-- `@agledger/verify-core` moves to `^1.4.0`. The declared range was `^1.3.0` while the lockfile pinned 1.3.0, so CI tested against a build without the ES256 verification floor while a fresh install resolved 1.4.0. Lockfile refreshed, which also clears a high-severity `nanoid` advisory in the dev tree (vitest -> vite -> postcss; never shipped in the tarball).
+- **The `params` description says the body is not type-coerced.** Identifier fields such as `externalTaskId`, `correlationId`, `platformRef`, `projectRef` and `publisher` are strings, so all-digit values must be written as strings.
+- **The `agledger_api` description covers supersession:** `supersedesRecordId` with `?superseded=false` returns the current state of tracked work, `supersededByCount` above 1 means a fork with several current heads, and signed `criteria` differ from unsigned `metadata` as filters.
+- `@agledger/verify-core` moves to `^1.4.0`.
 
 ## [2.9.0] - 2026-08-07
 
 ### Fixed
 
-- **A server that refuses to start now exits non-zero.** The `uncaughtException` handler printed the error and returned, which suppresses Node's default non-zero exit. Since 2.8.0 made `--api-url` mandatory, the most likely first-run failure (`agledger-mcp --api-key ...` with no URL) printed `Uncaught exception: No API URL configured` and then **exited 0**. Any launcher, supervisor, or shell reading the exit code saw a clean shutdown of a server that never accepted a connection. Missing `--api-key` exited 1 while missing `--api-url` exited 0, so the two halves of the same mistake reported opposite outcomes.
-
-- **The documented Quick Start could not start the server.** The `claude_desktop_config.json` example in the README passed only `--api-key`, and the `--help` usage line read `agledger-mcp --api-key <key> [--api-url <url>]`, marking as optional the flag 2.8.0 had made required. Copy-pasting either into a working MCP client produced a server that died at startup. Both now show `--api-url` as required, and a test spawns the built binary and asserts the shipped `--help` never brackets it again.
-
-- **An unknown flag is reported as usage, not as a crash.** `parseArgs` runs in strict mode, so `--version` (which this server does not implement) threw and surfaced as `Uncaught exception: Unknown option '--version'` with exit 0. It now prints an error, points at `--help`, and exits 2.
+- **A server that refuses to start now exits non-zero.** A missing `--api-url` previously printed an error and exited 0.
+- **The Quick Start and `--help` show `--api-url` as required.** The README `claude_desktop_config.json` example and the `--help` usage line now include it.
+- **An unknown flag prints an error, points at `--help`, and exits 2.**
 
 ### Changed (behavior)
 
-- **Exit codes are now a documented contract**: `0` clean, `1` runtime failure, `2` usage or configuration error. Configuration errors moved from 1 (missing key) and 0 (missing URL) to 2 uniformly. A launcher that keyed on the exact code `1` to mean "bad config" should read 2; anything treating non-zero as failure is unaffected, and the missing-URL case changes from a false success to a failure.
-
-### Internal
-
-- **The live integration suite no longer runs with placeholder credentials.** It probed `localhost:3001` and, if anything answered, ran with `agl_agt_test`, which every real Server rejects. The result was eight failures that read as a regression in whatever had just changed, when the only problem was an unset environment variable. Reachability is not permission, so it now skips on a missing key exactly as it skips on an unreachable API.
-
-### Packaging
-
-- **Source maps are no longer published.** They shipped with `sources` pointing at `../src/*.ts` and no `sourcesContent`, and `src/` is not in the tarball, so they resolved to nothing. The build no longer emits them at all, so no shipped `.js` or `.d.ts` carries a `sourceMappingURL` comment pointing at a map the tarball does not contain.
-- **`bugs` added to package.json.**
+- **Exit codes are a documented contract:** `0` clean, `1` runtime failure, `2` usage or configuration error. A missing `--api-key` or `--api-url` now exits 2. A launcher that checked for exactly `1` to detect bad configuration should check for 2.
 
 ## [2.8.0] - 2026-08-07
 
 ### Added
 
-- **`agledger://llms.txt` resource, and `agledger_discover` now names the narrative.** An MCP-connected agent had no way to learn `/llms.txt` existed: `discover` pointed only at OpenAPI, `resources/list` offered only the spec, and the string `llms` appeared nowhere in the package. The CLI advertised it, so the one integration surface built specifically for AI agents was the one hiding the API's agent-oriented documentation. The resource fetches live from `GET /llms.txt`, so it cannot go stale.
+- **`agledger://llms.txt` resource.** It fetches live from `GET /llms.txt`, and `agledger_discover` now points to it.
 
 ### Changed
 
-- **`--api-url` is now required.** The server defaulted to `https://agledger.example.com`, a placeholder that resolves nowhere, so a missing URL surfaced as a DNS failure against a host the operator never configured, on every tool call. It now refuses to start and says so. Every deployment is self-hosted, so there was no default worth having. Same defect the CLI and SDK carried.
+- **`--api-url` is now required.** The placeholder default is removed, and the server refuses to start without a URL.
 
 ## [2.7.0] - 2026-08-05
 
-Signing-agility wave 2.
-
 ### Added
 
-- **`agledger_verify` handles ES256 chains** via `@agledger/verify-core` 1.2.0 (dispatch bound to the trusted key's SPKI; unsupported algorithms still fail closed as `CHAIN_UNSUPPORTED_ALGORITHM`).
+- **`agledger_verify` handles ES256 chains** via `@agledger/verify-core` 1.2.0. Unsupported algorithms still fail closed as `CHAIN_UNSUPPORTED_ALGORITHM`.
 
 ## [2.6.0] - 2026-08-05
 
 ### Changed
 
-- **`agledger_verify` takes `@agledger/verify-core` `^1.1.0`, the verifier forward-compatibility floor.** Algorithm dispatch binds to the trusted verification key rather than the unverified protected header; tampered or missing header `alg` values fail as `CHAIN_ALG_MISMATCH`, a key algorithm beyond the build fails closed as `CHAIN_UNSUPPORTED_ALGORITHM`, the signature-covered kid is cross-checked against `signingKeyId` (`CHAIN_SIGNING_KEY_DRIFT`), and untagged COSE_Sign1 is rejected. Legitimate Ed25519 exports verify identically.
+- **`agledger_verify` takes `@agledger/verify-core` `^1.1.0`.** Algorithm dispatch binds to the trusted verification key rather than the unverified protected header. Tampered or missing header `alg` values fail as `CHAIN_ALG_MISMATCH`, a key algorithm beyond the build fails as `CHAIN_UNSUPPORTED_ALGORITHM`, the signed kid is cross-checked against `signingKeyId` (`CHAIN_SIGNING_KEY_DRIFT`), and untagged COSE_Sign1 is rejected. Valid Ed25519 exports verify as before.
 
 ## [2.5.6] - 2026-08-01
 
-Security housekeeping. No tool-surface or behavior change.
+### Security
 
-### Changed
-
-- Upgraded `@modelcontextprotocol/sdk` to `^1.30.0`. A fresh `npm install @agledger/mcp-server` previously ended with npm reporting moderate vulnerabilities, and enterprise CI that gates on `npm audit --audit-level=moderate` failed the install outright. The chain was `@modelcontextprotocol/sdk` to `@hono/node-server ^1.19.9`, and the advisory (GHSA-frvp-7c67-39w9, path traversal in `serve-static` on Windows via an encoded backslash) is fixed only in `@hono/node-server` 2.x. SDK 1.30.0 widened that range to `^1.19.9 || ^2.0.5`, so there is finally a fix path. Almost certainly not exploitable here, since it is Windows-only on a `serve-static` code path this package does not use, but "no fix available" reads badly on a security product.
-- Refreshed the lockfile to in-range latest, clearing the remaining transitive advisories: `@hono/node-server` 2.0.12, `hono` 4.12.33 (GHSA-xgm2-5f3f-mvvc, GHSA-hvrm-45r6-mjfj, GHSA-w62v-xxxg-mg59), `fast-uri` 3.1.5 (GHSA-v2hh-gcrm-f6hx, GHSA-4c8g-83qw-93j6), `body-parser` 2.3.0. `npm audit` now reports 0 vulnerabilities.
-
-### Notes
-
-- Verified against a live AGLedger API v1.3.4 over the in-memory MCP transport, not just mocks: all 75 tests pass, including the 8 live integration cases covering discover, auth identity, record list and create, the structured schema-help error, and the record lifecycle.
+- Upgraded `@modelcontextprotocol/sdk` to `^1.30.0` and refreshed transitive dependencies (`@hono/node-server`, `hono`, `fast-uri`, `body-parser`), so a fresh install reports no `npm audit` vulnerabilities. No tool-surface or behavior change.
 
 ## [2.5.5] - 2026-07-16
 
-Docs and tooling. No tool-surface or behavior change.
-
 ### Changed
 
-- The `agledger_discover` tool description now leads with notarize; the agent-facing quickstart string previously opened with "track accountability."
-- Removed dead vocabulary, stale naming history, and the phantom "fulfill" endpoint framing from the README and pitch text.
-- Refreshed the lockfile to in-range latest (`@agledger/verify-core` 1.0.2, plus dev tooling).
-- Upgraded the TypeScript devDependency to `^7.0.2`. Build, typecheck, and tests all pass under 7.0.2.
+- The `agledger_discover` tool description and quickstart now lead with notarize.
+- The README drops outdated terminology.
 
 ## [2.5.4] - 2026-06-29
 
-### Changed
-
-- Docs only: removed em-dashes from the README prose and the package.json description (writing-style sweep). Rewrote each sentence rather than swapping the glyph. No tool-surface or behavior change.
+- Maintenance release with no user-facing changes.
 
 ## [2.5.3] - 2026-06-20
 
 ### Changed
 
-- Bumped `@agledger/verify-core` to `^1.0.0` (now GA at 1.0.0 alongside the API and the published package line). No tool-surface or behavior changes — the `agledger_verify` offline-verification logic is unchanged.
+- Bumped `@agledger/verify-core` to `^1.0.0`. No tool-surface or behavior changes.
 
 ## [2.5.2] - 2026-06-18
 
-### Fixed
+### Security
 
-- **CodeQL `js/polynomial-redos`.** Replaced a regex-based trailing-slash strip with a linear scan, removing the polynomial-backtracking vector flagged by CodeQL. No tool-surface or behavior change.
+- Replaced a regex-based trailing-slash strip with a linear scan to remove a polynomial-backtracking risk flagged by CodeQL (`js/polynomial-redos`). No tool-surface or behavior change.
 
 ## [2.5.1] - 2026-06-10
 
 ### Changed
 
-- **License re-sync.** `LICENSE` is now a verbatim copy of the canonical AGLedger SDK license template **v1.5**: §7 trademarks trimmed to **AGLedger + Settlement Signal (pending)** (removed the retired "Agentic Ledger" / AOAP claims), §6 export language modernized to ENC §740.17(b)(1) mass-market self-classification, and §1 carries the no-inspection / no-training / no-usage-data representation. README: dropped the retired AOAP protocol link and trimmed the trademark footer to match LICENSE §7.
-- No code changes; republished so the distributed tarball carries the corrected license text.
+- `LICENSE` is updated to the canonical AGLedger SDK license template v1.5. The README drops a retired protocol link and trims the trademark footer to match `LICENSE` section 7.
 
 ## [2.5.0] - 2026-06-08
 
-Release marking the AGLedger API **v1.0.0 GA**. The MCP server is a thin pass-through over the API, so the tool surface is unchanged from 2.4.x; this is the GA-aligned cut alongside the SDK/CLI 1.0.0 release wave.
+Aligned with AGLedger API v1.0.0 GA. The tool surface is unchanged from 2.4.x.
 
 ## [2.4.11] - 2026-06-04
 
 ### Security
 
-- Hardened `agledger_api` and `ApiClient` against off-origin paths (prevents API-key exfiltration). A protocol-relative path like `//evil.com/x` passed the `startsWith('/')` guard, and `new URL(path, apiUrl)` resolved it to a different origin (`https://evil.com/x`) — sending the `Authorization: Bearer <apiKey>` header off-host. Two layers now block this: `agledger_api` rejects a `path` starting with `//` (returns a `PATH_INVALID` error result), and `ApiClient.request` pins every request to the configured API origin, throwing if the resolved URL's origin differs. No caller can be steered off-origin.
+- `agledger_api` rejects a `path` starting with `//` (returns a `PATH_INVALID` error result), and every request is pinned to the configured API origin. This prevents a crafted path from sending the API key to another host.
 
 ### Changed
 
-- SEP-1880 tool-level scopes (early adoption): `_meta.requiredScopes` added where it can be declared honestly. `agledger_verify` → `[]` (offline, no network, no key). `agledger_discover` → `[]` (calls `/health` + `/v1/scope-profiles`, both public, and `/v1/auth/me`, which is authenticated but scope-free by design — no NAMED scope gates it). `agledger_api` deliberately OMITS `_meta` (with an inline comment): it is the universal dispatcher to every route, each with its own server-enforced scope, so no single scope can be statically declared for it.
+- Added `_meta.requiredScopes` to the tools where a scope can be stated: `agledger_verify` and `agledger_discover` declare `[]`. `agledger_api` declares none, since each route enforces its own scope.
 
 ## [2.4.10] - 2026-06-04
 
-No functional change. First release published from CI with **build provenance** via npm trusted publishing (OIDC) — npm attaches a Sigstore provenance attestation automatically; verify with `npm audit signatures`. A CycloneDX SBOM is attached to the release. This package now lives in its own source-of-truth repo `agledger-ai/mcp-server` and resolves `@agledger/verify-core@0.1.4`.
+Published with npm build provenance (verify with `npm audit signatures`) and a CycloneDX SBOM. No functional change.
 
 ## [2.4.9] - 2026-06-02
 
 ### Security
 
-- `agledger_api` now rejects a `path` containing control characters (`\x00`–`\x1f`, `\x7f`) before building the request URL. Tool input is untrusted; control characters enable request-line / header injection and never appear in a legitimate API path. Returns a `PATH_INVALID` error result.
+- `agledger_api` rejects a `path` containing control characters (`\x00` to `\x1f`, `\x7f`) with a `PATH_INVALID` error result.
 
 ### Changed
 
-- `agledger_api` `destructiveHint` annotation corrected `false` → `true`. The tool dispatches to any route, including `DELETE`/`PATCH`, so it can perform destructive, non-idempotent operations — the honest worst-case annotation per the 2026 MCP tool-annotation guidance. `agledger_discover` and `agledger_verify` annotations were already correct (`verify` is `openWorldHint:false` — offline, no network).
+- The `agledger_api` `destructiveHint` annotation is now `true`, because the tool can dispatch `DELETE` and `PATCH` requests.
 
 ## [2.4.8] - 2026-05-29
 
 ### Fixed
 
-- `agledger_verify` now accepts the raw `GET /v1/verification-keys` response envelope (`{data:[...], ...}`) as `publicKeys`, unwrapping `.data` automatically — the MCP analogue of the CLI 0.8.7 fix. An MCP agent's natural flow gets the envelope straight from `agledger_api` and has no `.data[]`-extraction step, so the most obvious independent-audit call (`requireOutOfBandKeys: true` against the `agledger_api` keys response) previously failed. The compact `{keyId: SPKI-DER-base64}` map and the bare `[{keyId, publicKey, ...}]` list still pass through untouched. Updated tool description and example.
+- `agledger_verify` accepts the raw `GET /v1/verification-keys` response envelope (`{data:[...], ...}`) as `publicKeys` and unwraps `.data`. The compact `{keyId: SPKI-DER-base64}` map and the bare `[{keyId, publicKey, ...}]` list are still accepted.
 
 ## [2.4.7] - 2026-05-29
 
 ### Changed
 
-- `agledger_verify` rebuilt on `@agledger/verify-core@^0.1.3`: export-path binding-integrity now fires on engine ≥ v0.26.x exports (a denormalised `payload` rewritten while `coseSign1` stays intact fails `CHAIN_PAYLOAD_BINDING_MISMATCH`), and a signature short-circuited by an upstream chain break reports `not-checked` rather than `skipped`.
+- `agledger_verify` runs on `@agledger/verify-core@^0.1.3`. A denormalized `payload` rewritten while `coseSign1` stays intact fails `CHAIN_PAYLOAD_BINDING_MISMATCH`, and a signature skipped because of an upstream chain break reports `not-checked`.
 
 ## [2.4.6] - 2026-05-28
 
 ### Changed
 
-- Republished against `@agledger/verify-core` 0.1.2 — picks up OOB-key polymorphism and the temporal-axis fix. The `agledger_verify` tool's `publicKeys` argument now accepts either the compact `{keyId: SPKI-DER-base64}` map OR the natural array shape from `GET /v1/verification-keys` (`[{keyId, publicKey, ...}]`), as a JSON-encoded string or native object/array. Malformed shapes produce the tool's standard `{code: "INVALID_JSON", suggestion}` error envelope. Updated tool description and example.
+- Updated to `@agledger/verify-core` 0.1.2. The `publicKeys` argument of `agledger_verify` accepts either the compact `{keyId: SPKI-DER-base64}` map or the array from `GET /v1/verification-keys` (`[{keyId, publicKey, ...}]`), as a JSON-encoded string or a native object or array. Malformed input returns the standard `{code: "INVALID_JSON", suggestion}` error.
 
 ## [2.4.5] - 2026-05-28
 
 ### Changed
 
-- Republished against `@agledger/verify-core` 0.1.1. The `agledger_verify` tool now exercises `oidc_actor` and `key_temporal` on exports from engine ≥ v0.26.x (the wire now carries `actorOidcIss/Sub/Synthesized` and `signingKeyWindows`); the tool result reports these as `applied` instead of `skipped_no_input` for those exports. Older exports without the new fields continue to report them as `skipped_no_input`.
+- Updated to `@agledger/verify-core` 0.1.1. `agledger_verify` applies the `oidc_actor` and `key_temporal` checks to exports that carry the new fields; older exports still report them as `skipped_no_input`.
 
 ## [2.4.4] - 2026-05-27
 
-Verifier consolidation (Pass 1). `agledger_verify` now runs on the shared verification core `@agledger/verify-core` instead of a server-local copy of `verify-export.ts` — the same hash-chain + COSE_Sign1 + Ed25519 logic the SDK, CLI, and `@agledger/verify` share.
+`agledger_verify` now runs on the shared verification core `@agledger/verify-core`, the same hash-chain, COSE_Sign1 and Ed25519 logic used by the SDK, CLI and `@agledger/verify`.
 
 ### Changed
 
-- Offline verifier failure reasons are now canonical SCREAMING_SNAKE `FailureCode` values from `@agledger/verify-core`.
-- New `requireOutOfBandKeys` input on the `agledger_verify` tool: fail closed unless every signature is verified against a caller-supplied (out-of-band) key, rejecting keys embedded in the export. For high-assurance audits.
-- The tool result now surfaces `keyProvenance` — whether each verified entry's key came from out-of-band (caller-supplied) keys or was embedded in the export — so agents can distinguish a self-attesting export from an independently keyed one.
+- Offline verifier failure reasons are now `FailureCode` values from `@agledger/verify-core`, in SCREAMING_SNAKE case.
+- New `requireOutOfBandKeys` input on `agledger_verify`: fail unless every signature is verified against a caller-supplied key, rejecting keys embedded in the export.
+- The result includes `keyProvenance`, showing whether each verified entry's key was caller-supplied or embedded in the export.
 
 ## [2.4.3] - 2026-05-27
 
 ### Fixed
 
-- **`agledger_verify` rejected valid exports.** The offline verifier read the legacy `position` field on each export entry, but current exports (v0.25+) emit `chainPosition`. With `position` absent, every valid export failed with a false `position_gap` on the first entry. Now reads `chainPosition` with a `position` fallback for pre-v0.25 exports. Verified end-to-end against a live export.
+- **`agledger_verify` rejected valid exports.** It now reads `chainPosition` (with a `position` fallback for older exports) instead of only the legacy `position` field.
 
 ## [2.4.2] - 2026-05-27
 
-Tracks AGLedger API v0.25.5 (Verify → Gate rename). The MCP server is a thin pass-through, so the renamed routes (`/outcome` → `/verdict`, `/verify` → `/evaluate`, `/verification-status` → `/gate-status`) reach the `agledger_api` tool automatically — no functional change. `agledger_verify` (offline COSE_Sign1 audit verification) is cryptographic and unchanged.
+Tracks AGLedger API v0.25.5 (Verify to Gate rename). The renamed routes reach `agledger_api` automatically, and `agledger_verify` is unchanged.
 
 ### Changed
 
-- README: the Verdicts capability is now described as accept/reject (was PASS/FAIL).
+- README: the Verdicts capability is described as accept/reject.
 
 ## [2.4.1] - 2026-05-21
 
-Tracks AGLedger API v0.24.0. MCP server is a thin pass-through, so the v0.24.0 rename sweep lands on `agledger_api` calls automatically. Internal updates:
+Tracks AGLedger API v0.24.0.
 
 ### Changed
 
-- Offline verifier (`agledger_verify`): `RecordAuditExport.exportMetadata.enterpriseId` → `orgId` to match v0.24.0 export shape.
-- Integration test fixtures: `/v1/records/{id}/receipts` → `/v1/records/{id}/completions` (vocab cutover leftover from v0.23.0).
+- `agledger_verify`: `RecordAuditExport.exportMetadata.enterpriseId` is now `orgId`, matching the v0.24.0 export shape.
 
 ## [2.4.0] - 2026-05-19
 
-Tracks AGLedger API v0.23.0. SCITT vocabulary alignment + canonical COSE_Sign1 chain envelope cutover. The MCP server is a thin pass-through, so most of the wave is API-side; the `agledger_verify` tool is rewritten to verify the new COSE_Sign1 envelope.
+Tracks AGLedger API v0.23.0, which moves the chain to a canonical COSE_Sign1 envelope.
 
-### Changed (BREAKING — `agledger_verify` tool: format 1.0 → 2.0)
+### Changed (breaking)
 
-- `agledger_verify` now decodes canonical COSE_Sign1 envelopes (RFC 9052, tag 18, EdDSA) over in-toto v1 Statement payloads, deterministic CBOR per RFC 8949 §4.2.1. Replaces the JCS + detached-Ed25519 verifier from 2.3.x.
-- Tool description updated to mention COSE_Sign1 + `Sig_structure` reconstruction + the new failure modes (`cose_decode_failed`, `cose_header_mismatch`).
-- The tool's `structuredContent` result now carries a `signatureCoverage` discriminator (`{ signed, unsigned, skipped, total }`). Agents should not conclude "Ed25519-verified" from `valid: true` alone — surface `signatureCoverage` or `integrityLevel` in their reports.
-- New `chainIntegrityReason: "payload_drift"` — emitted when the visible `payload` jsonb diverges from the predicate signed in `coseSign1` (privileged-DBA-bypass tamper detection).
-- Pre-1.0 export-format JSON (`exportFormatVersion: "1.0"`) is rejected with `unsupported_algorithm`. Re-export the chain from a v0.23.0+ engine. The MCP tool description tells the agent how to do this: `agledger_api method=GET path=/v1/records/{id}/audit-export`.
-- The verifier picks up a `cborg` runtime dependency (only used by the offline-verifier path; the `agledger_discover` + `agledger_api` tools still use direct `fetch`).
+- `agledger_verify` decodes COSE_Sign1 envelopes (RFC 9052, tag 18, EdDSA) over in-toto v1 Statement payloads with deterministic CBOR (RFC 8949 section 4.2.1), replacing the earlier JCS and detached-Ed25519 verifier.
+- The tool description now covers COSE_Sign1 and the new failure modes `cose_decode_failed` and `cose_header_mismatch`.
+- `structuredContent` carries a `signatureCoverage` object (`{ signed, unsigned, skipped, total }`). Do not conclude "Ed25519-verified" from `valid: true` alone; report `signatureCoverage` or `integrityLevel`.
+- New `chainIntegrityReason: "payload_drift"` when the visible `payload` differs from the predicate signed in `coseSign1`.
+- Export format 1.0 (`exportFormatVersion: "1.0"`) is rejected with `unsupported_algorithm`. Re-export the chain with `agledger_api method=GET path=/v1/records/{id}/audit-export` from a v0.23.0 or later Server.
+- Adds a `cborg` runtime dependency, used only by the offline verifier.
 
-### Changed (text only — Receipt → Completion alignment)
+### Changed
 
-- `agledger_discover` quickstart step 4: "Do your work, then submit a receipt" → "submit a completion"; path `/v1/records/{id}/receipts` → `/v1/records/{id}/completions`.
-- `agledger_api` tool description: route example `/v1/records/{id}/receipts` → `/v1/records/{id}/completions`. Workflow line "POST /v1/records/{id}/receipts — submit evidence when done" → "POST /v1/records/{id}/completions — submit evidence when done".
+- `agledger_discover` quickstart step 4 and the `agledger_api` description now say "submit a completion" with the path `/v1/records/{id}/completions` (was `/v1/records/{id}/receipts`). Update any prompts that target the old path.
 
-The three-tool surface is unchanged: `agledger_discover`, `agledger_api`, `agledger_verify`. `agledger_api` is a pure HTTP pass-through, so the API-side renames (route paths, request/response field names, webhook event names, scopes) surface verbatim. Agents writing prompts that target `agledger_api method=POST path=/v1/records/{id}/receipts` need to update the path to `/v1/records/{id}/completions`.
-
-### Tests
-
-- 127 tests pass. The `agledger_verify` test suite was rewritten with an in-test COSE_Sign1 envelope builder to cover the new failure modes (cose_decode_failed, cose_header_mismatch, payload_drift) without depending on engine-generated fixtures.
+The three-tool surface is unchanged: `agledger_discover`, `agledger_api` and `agledger_verify`.
 
 ## [2.3.3] - 2026-05-06
 
 ### Fixed
 
-- **Gemini-MCP integrations no longer break on the first non-trivial call.** The three free-form object fields (`agledger_api.params`, `agledger_verify.export`, `agledger_verify.publicKeys`) were emitting `additionalProperties: {}` on a properties-less OBJECT — both keywords are outside Gemini's strict OpenAPI 3.0 function-call grammar, so any non-trivial body returned `MALFORMED_FUNCTION_CALL`. Each field is now declared as a JSON-encoded `string` on the wire (Gemini-friendly) and parsed server-side. Object-native runtimes (Claude Desktop, ChatGPT MCP) keep working — the server accepts either a stringified-JSON string or a native object via a Zod preprocess. Tool descriptions document the JSON-encoded shape with examples.
-
-### Tests
-
-- Added Gemini-shape regressions covering all three affected fields: stringified-JSON path, native-object path (back-compat), and malformed-JSON error path. The new `INVALID_JSON` error code surfaces a structured suggestion telling the agent how to retry.
+- **Gemini MCP integrations work on non-trivial calls.** `agledger_api.params`, `agledger_verify.export` and `agledger_verify.publicKeys` are now declared as JSON-encoded strings, which Gemini's function-call grammar accepts. Object-native runtimes (Claude Desktop, ChatGPT MCP) can still pass a native object. Malformed JSON returns the `INVALID_JSON` error with a suggestion for retrying.
 
 ## [2.3.2] - 2026-05-06
 
 ### Fixed
 
-- **Tool results are now visible to LLM-driven MCP runtimes.** Previously every tool returned `content: []` with all data in `structuredContent`. Per MCP spec 2025-06-18, structured content SHOULD also be returned as functionally-equivalent unstructured content; LLM clients (Claude Desktop, ChatGPT MCP, Cursor, OpenAI tool-mapped runtimes) only forward `content[]` to the model, so they saw empty results and stopped. All three tools (`agledger_discover`, `agledger_api`, `agledger_verify`) now mirror `structuredContent` into a single TextContent block on every success and error path.
-- **`serverInfo.version`, `User-Agent`, and `--help` banner no longer drift from `package.json`.** All three read the version from `package.json` at runtime via a shared `version.ts` module instead of duplicating the literal. v2.3.1 shipped `serverInfo.version: 2.3.0` and `User-Agent: agledger-mcp-server/2.2.0`; that class of drift is now structurally impossible.
-- **`--help` banner lists all three tools.** `agledger_verify` was missing from the Tools section.
-- **`mirrorContent` no longer pretty-prints.** The text mirror is consumed by an LLM, not a human — dropping the 2-space indent saves ~25% on agent context tokens for large paginated responses.
-
-### Build
-
-- Added a `files` allowlist to `package.json` so the npm tarball only ships `dist/`, `LICENSE`, `README.md`, `CHANGELOG.md`, and `package.json` (24 files vs. 29 in 2.3.1). No more shipping `tests/` or `tsconfig.json`.
-
-### Tests
-
-- Added `assertContentMirrorsStructured` helper and a dedicated regression suite covering success and error paths on all three tools, plus a parity test asserting `SERVER_VERSION` matches `package.json`.
+- **Tool results are visible to LLM-driven MCP runtimes.** All three tools now mirror `structuredContent` into a single text content block on every success and error path.
+- `serverInfo.version`, `User-Agent` and the `--help` banner now read the version from `package.json`.
+- The `--help` banner lists all three tools, including `agledger_verify`.
+- The text mirror is no longer pretty-printed, which cuts token use on large responses.
 
 ## [2.3.1] - 2026-04-30
 
-Tracks AGLedger API v0.22.13. The MCP server is a thin pass-through, so all 10 new v0.22.x routes (`/v1/admin/strings/*`, federation gateway status, peer directory, vault checkpoints, dispute withdraw, etc.) are reachable via `agledger_api` with no surface changes.
-
-### Changed
-
-- Re-published as part of the v0.7.1 SDK/CLI sweep tracking API v0.22.13. No tool-surface changes.
+Tracks AGLedger API v0.22.13. No tool-surface changes.
 
 ## [2.3.0] - 2026-04-27
 
-Tracks AGLedger API v0.21.5. Every `/v1/mandates/*` route is now `/v1/records/*`; `Contract Type` is `Type`. The MCP server is a thin pass-through, so this release sweeps tool descriptions, the quickstart returned by `agledger_discover`, and the offline verifier's field names.
+Tracks AGLedger API v0.21.5. Every `/v1/mandates/*` route is now `/v1/records/*`, and `Contract Type` is `Type`.
 
-### Changed (BREAKING)
+### Changed (breaking)
 
-- **Offline verifier output field rename.** `verify-export.ts` exports `RecordAuditExport` (was `MandateAuditExport`). Metadata fields: `mandateId` → `recordId`, `contractType` → `type`. `VerifyExportResult.mandateId` → `recordId`. Crypto primitives (RFC 8785 JCS, SHA-256, Ed25519) and the signature input `{position}:{payloadHash}:{previousHash}` are unchanged.
-- **`agledger_verify` tool description** points at `/v1/records/{id}/audit-export`. The `INVALID_EXPORT` error suggestion was updated similarly.
+- Offline verifier output fields are renamed: `mandateId` to `recordId` and `contractType` to `type`; `MandateAuditExport` is now `RecordAuditExport`. The signature input `{position}:{payloadHash}:{previousHash}` is unchanged.
+- The `agledger_verify` description points at `/v1/records/{id}/audit-export`, and the `INVALID_EXPORT` error suggestion is updated to match.
 
-### Changed (tool description / quickstart sweep)
+### Changed
 
-- **`agledger_discover` quickstart** now reads:
-  1. `GET /v1/schemas` — list Record types.
-  2. `GET /v1/schemas/{type}` — get required fields and examples.
-  3. `POST /v1/records` — create a record.
-  4. `POST /v1/records/{id}/receipts` — submit evidence when done.
-- **`agledger_api` tool description** uses the new vocabulary throughout (workflow steps, path examples, `PATH_INVALID` error message and suggestion).
-- **README** Tools table, Agent workflow section, and "What is AGLedger?" bullet list use Record / Type vocabulary.
-
-### Build
-
-- `prebuild` now wipes `dist/` so stale outputs from prior builds cannot leak into the next one.
+- `agledger_discover` quickstart now reads: `GET /v1/schemas` to list Record types, `GET /v1/schemas/{type}` for required fields and examples, `POST /v1/records` to create a record, `POST /v1/records/{id}/receipts` to submit evidence when done.
+- The `agledger_api` description and the README use the Record and Type vocabulary.
