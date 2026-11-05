@@ -1,7 +1,7 @@
 {
   "name": "@agledger/mcp-server",
   "version": "3.1.0",
-  "description": "AGLedger MCP server: the AGLedger API as MCP tools, so any MCP-capable agent can write to the signed ledger.",
+  "description": "AGLedger MCP server: the AGLedger API as MCP tools, so any MCP-capable agent can write to the signed ledger. Patent pending.",
   "license": "SEE LICENSE IN LICENSE",
   "author": "AGLedger LLC",
   "repository": {
