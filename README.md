@@ -208,7 +208,7 @@ AGLedger is change control for AI agents, delivered as a signed ledger for agent
 
 Learn more at [agledger.ai](https://www.agledger.ai) | [API docs](https://www.agledger.ai/docs/)
 
-Each self-hosted AGLedger instance also serves interactive Swagger UI at `{AGLEDGER_API_URL}/docs`.
+Each self-hosted AGLedger instance serves its OpenAPI document at `{AGLEDGER_API_URL}/openapi.json`, and an interactive API UI at `{AGLEDGER_API_URL}/docs` when the operator enables it.
 
 ## Requirements
 
