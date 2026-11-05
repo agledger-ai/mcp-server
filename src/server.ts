@@ -361,7 +361,24 @@ function verifyVerdictText(result: VerifyExportResult): string {
     );
   }
   lines.push(...peerMessageLines(result.federationWire));
+  lines.push(...evidenceLines(result.evidenceBinding));
   return lines.join('\n');
+}
+
+/**
+ * The summary lines on the evidence bodies an `?evidence=true` export
+ * inlines, each re-bound to the hash its entry signs. Silent when every one
+ * re-bound, or when the export carries none.
+ */
+export function evidenceLines(counts: { present: number; verified: number; clientHashed: number; failed: number }): string[] {
+  const lines: string[] = [];
+  if (counts.failed > 0) {
+    lines.push(`${counts.failed} of ${counts.present} inlined evidence bodies failed CHAIN_EVIDENCE_BINDING_MISMATCH: they do not hash to the evidenceHash or payloadHash their entry signs.`);
+  }
+  if (counts.clientHashed > 0) {
+    lines.push(`${counts.clientHashed} of ${counts.present} inlined evidence bodies are on an encrypted-mode completion, whose signed hash covers a cleartext the export does not carry, so they were not re-bound: decrypt and hash them yourself.`);
+  }
+  return lines;
 }
 
 /**
@@ -373,7 +390,7 @@ export function peerMessageLines(wire: { present: number; verified: number; fail
   const lines: string[] = [];
   if (wire.afterRetirement > 0) {
     lines.push(
-      `${wire.afterRetirement} of ${wire.present} sealed peer messages verified under a key the peer had retired before the receiver took them: in order when the receiver's federation.peer_revoked audit row for the peer comes after them.`,
+      `${wire.afterRetirement} of ${wire.present} sealed peer messages the peer signed under a key it had already retired: in order when the receiver's federation.peer_revoked audit row for the peer comes after them.`,
     );
   }
   if (wire.failed > 0) {
@@ -419,6 +436,7 @@ const EXPORT_FAILURE_CODES = [
   'CHAIN_ACTOR_ATTRIBUTION_MISMATCH',
   'CHAIN_AGENT_SIGNATURE_INVALID',
   'CHAIN_FEDERATION_WIRE_INVALID',
+  'CHAIN_EVIDENCE_BINDING_MISMATCH',
   'CHAIN_UNSUPPORTED_ALGORITHM',
   'CHAIN_SIGNING_KEY_UNANCHORED',
   'KEY_STATEMENT_INVALID',
@@ -537,9 +555,10 @@ const VERIFY_ARGS = {
         'After a peer changes its federation key, add "history" to an array entry: the JSON the peer serves at ' +
         'GET /.well-known/agledger-federation-keys.json (no auth). Every key it links to that entry\'s publicKey ' +
         'through successions both keys signed is then trusted inside its window, so entries sealed before the ' +
-        'change verify. A hub may appear twice, to pin a key no succession links. ' +
-        'result.federationWire counts present, verified, failed and afterRetirement (verified under a key the ' +
-        'peer had retired before the receiver took them).',
+        'change verify; each message is placed in its key\'s window by its signed wire.timestamp. A hub may appear ' +
+        'twice, to pin a key no succession links or one the history does not list. ' +
+        'result.federationWire counts present, verified, failed and afterRetirement (verified, but signed by the ' +
+        'peer under a key it had already retired).',
     ),
   requireKeyId: z
     .string()
@@ -862,6 +881,8 @@ export class AgledgerMcpServer {
           'On failure, brokenAt pinpoints the first entry that failed and its canonical code ' +
           `(${EXPORT_FAILURE_CODES.join(', ')}); CHAIN_UNSUPPORTED_ALGORITHM means this build ` +
           'could not compute the key\'s algorithm: upgrade, and never read it as a pass. Obtain the export via agledger_api with method=GET, path=/v1/records/{id}/audit-export. ' +
+          'Add params \'{"evidence":true}\' to inline each completion\'s evidence and each dispute\'s filed payload: every inlined body is ' +
+          're-bound to the hash its entry signs (result.evidenceBinding; an edited one fails CHAIN_EVIDENCE_BINDING_MISMATCH). ' +
           'For the raw COSE_Sign1 stream, use path=/v1/records/{id}/attestation.',
         inputSchema: toolInput(VERIFY_ARGS),
         annotations: {
