@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest
 import { readFileSync } from 'node:fs';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { createTestHarness, type TestHarness } from './harness.js';
-import { peerMessageLines } from '../src/server.js';
+import { evidenceLines, peerMessageLines } from '../src/server.js';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -178,7 +178,17 @@ describe('agledger_verify peer-message summary', () => {
     expect(mixed[0]).toBe('2 of 5 sealed peer messages failed CHAIN_FEDERATION_WIRE_INVALID.');
     expect(mixed[1]).toMatch(/^2 of 5 sealed peer messages were hashed and matched to their entry but their peer signature was not checked/);
     expect(peerMessageLines({ present: 2, verified: 2, failed: 0, afterRetirement: 1 })).toEqual([
-      "1 of 2 sealed peer messages verified under a key the peer had retired before the receiver took them: in order when the receiver's federation.peer_revoked audit row for the peer comes after them.",
+      "1 of 2 sealed peer messages the peer signed under a key it had already retired: in order when the receiver's federation.peer_revoked audit row for the peer comes after them.",
     ]);
+  });
+});
+
+describe('agledger_verify evidence summary', () => {
+  it('is silent when every inlined body re-bound, and names a failure and a body it could not re-bind', () => {
+    expect(evidenceLines({ present: 0, verified: 0, clientHashed: 0, failed: 0 })).toEqual([]);
+    expect(evidenceLines({ present: 2, verified: 2, clientHashed: 0, failed: 0 })).toEqual([]);
+    const lines = evidenceLines({ present: 3, verified: 1, clientHashed: 1, failed: 1 });
+    expect(lines[0]).toBe('1 of 3 inlined evidence bodies failed CHAIN_EVIDENCE_BINDING_MISMATCH: they do not hash to the evidenceHash or payloadHash their entry signs.');
+    expect(lines[1]).toMatch(/^1 of 3 inlined evidence bodies are on an encrypted-mode completion/);
   });
 });
