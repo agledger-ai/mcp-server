@@ -510,7 +510,7 @@ const VERIFY_ARGS = {
     .optional()
     .describe(
       'Recommended. SPKI digests ("sha256:<64 hex>") of vault keys you took out of band: the installer ' +
-        'prints the first vault key\'s, and you can derive one as the SHA-256 of the DER-encoded SubjectPublicKeyInfo of a key ' +
+        'prints the first vault key\'s, and the Server\'s signing-key-digest.js derives one from a key ' +
         'the operator holds. Ask the operator for it; do not take it from the export ' +
         '(exportMetadata.anchoredFrom) or from GET /v1/verification-keys, which are the Server\'s own word. ' +
         'The signed key statements the export carries are walked from these: an entry signed by a key ' +
