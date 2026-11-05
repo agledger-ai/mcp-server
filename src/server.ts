@@ -94,8 +94,8 @@ function mirrorContent(structured: unknown): CallToolResult['content'] {
 
 /**
  * Structured error for failures raised by this server (network, timeout, malformed input).
- * API-origin errors are forwarded verbatim without enrichment; if the API
- * returns a suggestion, agents see it; if not, that's an API concern to fix upstream.
+ * API-origin errors are forwarded verbatim without enrichment: a suggestion
+ * the API returns reaches the agent as sent, and none is added when it returns none.
  */
 function errorResult(
   message: string,
@@ -323,7 +323,7 @@ function verifyVerdictText(result: VerifyExportResult): string {
     lines.push(
       'Verdict: VERIFIED, NOT ANCHORED. Nothing failed, but this is NOT a trusted verdict: the trustAnchors ' +
         `(${trust.anchors.join(', ')}) were walked, but no signature here verified under a key they anchor. ` +
-        'An entry that carries no signature proves nothing about who wrote it.',
+        'An entry that carries no signature says nothing about who wrote it.',
     );
     lines.push(
       'Next: if the entries are signed, check that each trustAnchors digest is a vault key of the install that wrote ' +
@@ -405,10 +405,8 @@ export function peerMessageLines(wire: { present: number; verified: number; fail
 
 /**
  * Every code `agledger_verify` can report, named in its description so a model
- * can branch on them. The list used to be typed out by hand and fell three
- * codes behind verify-core (CHAIN_OIDC_ACTOR_MISMATCH, CHAIN_KEY_EXPIRED,
- * CHAIN_KEY_NOT_YET_ACTIVE). `ExportCodesMissing` below makes the compiler
- * fail when verify-core adds an export-level code this list does not carry.
+ * can branch on them. `ExportCodesMissing` below makes the compiler fail when
+ * verify-core adds an export-level code this list does not carry.
  * CHECKPOINT_* and TENANT_* are dump-verifier codes and never come back from
  * an audit export. KEY_* are findings on the export's signed key statements,
  * reported at position 0 when trustAnchors are given.
@@ -548,13 +546,14 @@ const VERIFY_ARGS = {
         'operator gives it (base64 SPKI DER, or base64 of the raw 32 bytes the handshake registered). ' +
         'A receiving Server seals each peer message it accepts on the chain entry it writes (payload.wire), ' +
         'as the peer signed it. Every sealed message is held to its body hash and to its entry; one from a ' +
-        'hub given here also has its signature re-verified under that key, which proves what the peer ' +
+        'hub given here also has its signature re-verified under that key, which checks what the peer ' +
         'asserted from this export alone, and fails CHAIN_FEDERATION_WIRE_INVALID if it does not verify. ' +
         'After a peer changes its federation key, add "history" to an array entry: the JSON the peer serves at ' +
         'GET /.well-known/agledger-federation-keys.json (no auth). Every key it links to that entry\'s publicKey ' +
         'through successions both keys signed is then trusted inside its window, so entries sealed before the ' +
         'change verify; each message is placed in its key\'s window by its signed wire.timestamp. A hub may appear ' +
         'twice, to pin a key no succession links or one the history does not list. ' +
+        'Federation key histories need a Server 2.2 or later on the peer. ' +
         'result.federationWire counts present, verified, failed and afterRetirement (verified, but signed by the ' +
         'peer under a key it had already retired).',
     ),
@@ -733,7 +732,8 @@ export class AgledgerMcpServer {
         annotations: {
           readOnlyHint: false,
           // This tool dispatches to any route, including DELETE/PATCH, so it can
-          // perform destructive, non-idempotent operations. Annotate honestly.
+          // perform destructive, non-idempotent operations, so it is marked
+          // destructive and not idempotent.
           destructiveHint: true,
           idempotentHint: false,
           openWorldHint: true,
@@ -743,9 +743,9 @@ export class AgledgerMcpServer {
         // method+path to every route, each with its own scope requirement
         // (records:read, records:write, etc.). The required scope is route-
         // dependent and enforced server-side per request; it cannot be
-        // statically declared for the dispatcher as a whole. Fabricating a
-        // single scope here would be dishonest. Callers see the real missing
-        // scopes in the API's 403 response (missingScopes), forwarded verbatim.
+        // statically declared for the dispatcher as a whole, so no scope is
+        // listed here. A caller sees the missing scopes in the API's 403
+        // response (missingScopes), forwarded verbatim.
       },
       async (args) => {
         const refused = unknownArgumentResult(
@@ -1013,8 +1013,8 @@ export class AgledgerMcpServer {
     const client = this.client;
 
     /**
-     * Proxies GET /openapi.json at read time. Keeps the spec fresh, with no local
-     * cache that could go stale. Clients (Claude Desktop, etc.) surface this
+     * Proxies GET /openapi.json at read time. Fetches the spec on every read, with no
+     * local cache. Clients (Claude Desktop, etc.) surface this
      * in their resource picker, so users/agents can pull the spec into context
      * without constructing an `agledger_api` call.
      */
@@ -1045,8 +1045,7 @@ export class AgledgerMcpServer {
 
     /**
      * Proxies GET /llms.txt at read time. The API writes this narrative for
-     * agents. Same live-fetch approach as the spec resource, so it cannot go
-     * stale.
+     * agents. Same live-fetch approach as the spec resource.
      */
     this.mcp.registerResource(
       'agledger-llms-txt',
