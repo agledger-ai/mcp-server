@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { createTestHarness, type TestHarness } from './harness.js';
 import { peerMessageLines } from '../src/server.js';
@@ -108,6 +109,24 @@ describe('agledger_verify federationKeys', () => {
     expect(sc.code).toBe('INVALID_ARGUMENT');
     expect(String(sc.message)).toContain('not an Ed25519 public key');
   });
+
+  it('passes a peer key history through, and verify-core refuses one that was altered', async () => {
+    const history = JSON.parse(readFileSync(new URL('./fixtures/federation-key-history/succession.json', import.meta.url), 'utf8')) as {
+      hubId: string;
+      statements: Array<{ payload: string }>;
+    };
+    const newest = (JSON.parse(history.statements[2]!.payload) as { subject: { publicKey: string } }).subject.publicKey;
+    history.statements[1]!.payload = history.statements[1]!.payload.replace('04:22:03', '04:21:03');
+    const result = (await harness.client.callTool({
+      name: 'agledger_verify',
+      arguments: {
+        export: '{"exportMetadata":{"recordId":"r"},"entries":[]}',
+        federationKeys: JSON.stringify([{ hubId: history.hubId, publicKey: newest, history }]),
+      },
+    })) as CallToolResult;
+    expect(result.isError).toBe(true);
+    expect(String((result.structuredContent as Record<string, unknown>).message)).toMatch(/history\.statements\[1\].*does not hold/);
+  });
 });
 
 describe('agledger_verify agentKeys', () => {
@@ -150,13 +169,16 @@ describe('agledger_verify agentKeys', () => {
 
 describe('agledger_verify peer-message summary', () => {
   it('says a key that did not match failed, not that no key was given', () => {
-    expect(peerMessageLines({ present: 0, verified: 0, failed: 0 })).toEqual([]);
-    expect(peerMessageLines({ present: 2, verified: 2, failed: 0 })).toEqual([]);
-    expect(peerMessageLines({ present: 5, verified: 0, failed: 5 })).toEqual([
+    expect(peerMessageLines({ present: 0, verified: 0, failed: 0, afterRetirement: 0 })).toEqual([]);
+    expect(peerMessageLines({ present: 2, verified: 2, failed: 0, afterRetirement: 0 })).toEqual([]);
+    expect(peerMessageLines({ present: 5, verified: 0, failed: 5, afterRetirement: 0 })).toEqual([
       '5 of 5 sealed peer messages failed CHAIN_FEDERATION_WIRE_INVALID.',
     ]);
-    const mixed = peerMessageLines({ present: 5, verified: 1, failed: 2 });
+    const mixed = peerMessageLines({ present: 5, verified: 1, failed: 2, afterRetirement: 0 });
     expect(mixed[0]).toBe('2 of 5 sealed peer messages failed CHAIN_FEDERATION_WIRE_INVALID.');
     expect(mixed[1]).toMatch(/^2 of 5 sealed peer messages were hashed and matched to their entry but their peer signature was not checked/);
+    expect(peerMessageLines({ present: 2, verified: 2, failed: 0, afterRetirement: 1 })).toEqual([
+      "1 of 2 sealed peer messages verified under a key the peer had retired before the receiver took them: in order when the receiver's federation.peer_revoked audit row for the peer comes after them.",
+    ]);
   });
 });

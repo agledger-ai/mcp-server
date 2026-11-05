@@ -369,8 +369,13 @@ function verifyVerdictText(result: VerifyExportResult): string {
  * check (a key given for the hub that did not match among them); the rest of
  * the unverified ones came from a hub no key was given for.
  */
-export function peerMessageLines(wire: { present: number; verified: number; failed: number }): string[] {
+export function peerMessageLines(wire: { present: number; verified: number; failed: number; afterRetirement: number }): string[] {
   const lines: string[] = [];
+  if (wire.afterRetirement > 0) {
+    lines.push(
+      `${wire.afterRetirement} of ${wire.present} sealed peer messages verified under a key the peer had retired before the receiver took them: in order when the receiver's federation.peer_revoked audit row for the peer comes after them.`,
+    );
+  }
   if (wire.failed > 0) {
     lines.push(`${wire.failed} of ${wire.present} sealed peer messages failed CHAIN_FEDERATION_WIRE_INVALID.`);
   }
@@ -529,7 +534,12 @@ const VERIFY_ARGS = {
         'as the peer signed it. Every sealed message is held to its body hash and to its entry; one from a ' +
         'hub given here also has its signature re-verified under that key, which proves what the peer ' +
         'asserted from this export alone, and fails CHAIN_FEDERATION_WIRE_INVALID if it does not verify. ' +
-        'result.federationWire counts present, verified and failed.',
+        'After a peer changes its federation key, add "history" to an array entry: the JSON the peer serves at ' +
+        'GET /.well-known/agledger-federation-keys.json (no auth). Every key it links to that entry\'s publicKey ' +
+        'through successions both keys signed is then trusted inside its window, so entries sealed before the ' +
+        'change verify. A hub may appear twice, to pin a key no succession links. ' +
+        'result.federationWire counts present, verified, failed and afterRetirement (verified under a key the ' +
+        'peer had retired before the receiver took them).',
     ),
   requireKeyId: z
     .string()
