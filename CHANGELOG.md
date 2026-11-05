@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
-- **`federationKeys` on `agledger_verify`:** verifies the peer messages a receiving Server seals from federation, against the keys you supply. `result.federationWire` reports `present`, `verified` and `failed` counts, and a failure is `CHAIN_FEDERATION_WIRE_INVALID`. Requires `@agledger/verify-core` 2.1.0.
+- **`federationKeys` on `agledger_verify`:** verifies the peer messages a receiving Server seals from federation, against the keys you supply. `result.federationWire` reports `present`, `verified`, `failed` and `afterRetirement` counts, and a failure is `CHAIN_FEDERATION_WIRE_INVALID`. An array entry's `history`, the peer's `GET /.well-known/agledger-federation-keys.json`, trusts every key it links to that entry's key, so entries sealed before the peer changed its federation key verify. Requires `@agledger/verify-core` 2.1.0.
 
 ### Fixed
 
