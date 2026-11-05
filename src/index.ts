@@ -16,9 +16,9 @@ import { ON_BEHALF_OF_ENV, type DelegationSourceOptions } from './delegation.js'
 const EXIT_RUNTIME_FAILURE = 1;
 const EXIT_USAGE_ERROR = 2;
 
-// These handlers used to print and return, which SUPPRESSES Node's default
-// non-zero exit: an unstartable server reported its own fatal error and then
-// exited 0, so anything reading the exit code saw a clean shutdown.
+// These handlers print the error and then exit non-zero explicitly: returning
+// from an uncaughtException handler suppresses Node's default non-zero exit,
+// so an unstartable server would otherwise report its fatal error and exit 0.
 process.on('uncaughtException', (err) => {
   process.stderr.write(`Fatal: ${err.message}\n`);
   process.exit(EXIT_RUNTIME_FAILURE);
@@ -196,9 +196,10 @@ Exit codes: 0 clean, 1 runtime failure, 2 usage or configuration error.
     );
     process.exit(EXIT_USAGE_ERROR);
   }
-  // A URL that does not parse used to start the server, which then failed
-  // every tool call; `localhost:3000` parses, with `localhost:` as its scheme.
-  // Only an absolute http(s) URL can reach a Server.
+  // Refuse a URL that does not parse, or that parses with another scheme:
+  // `localhost:3000` parses, with `localhost:` as its scheme. Only an absolute
+  // http(s) URL can reach a Server, so starting with anything else would fail
+  // every tool call.
   const urlProblem = apiUrlProblem(apiUrl);
   if (urlProblem) {
     const origin = values['api-url'] !== undefined ? '--api-url' : 'AGLEDGER_API_URL';

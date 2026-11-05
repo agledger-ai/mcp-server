@@ -28,17 +28,17 @@ Add to your MCP client configuration (e.g. `claude_desktop_config.json`):
   "mcpServers": {
     "agledger": {
       "command": "agledger-mcp",
-      "args": [
-        "--api-key", "your-api-key",
-        "--api-url", "https://your-agledger-instance"
-      ]
+      "args": ["--api-url", "https://your-agledger-instance"],
+      "env": { "AGLEDGER_API_KEY": "your-api-key" }
     }
   }
 }
 ```
 
-Both flags are required, unless an OIDC token source stands in for the key (see
-[below](#authenticating-with-oidc-instead-of-an-api-key)). AGLedger is
+The API URL and the API key are both required, unless an OIDC token source
+stands in for the key (see
+[below](#authenticating-with-oidc-instead-of-an-api-key)). The key can also be
+passed as `--api-key`, but the `env` form keeps it out of the process list. AGLedger is
 self-hosted, so there is no default server to call: without `--api-url`, or
 with one that is not an absolute `http` or `https` URL, the server exits before
 it accepts a connection.
@@ -165,11 +165,11 @@ to compare, and it is recorded `unbound`.
 |------|-------------|
 | `agledger_discover` | Returns API health, your identity, available scopes, and a quickstart workflow. Call this first. |
 | `agledger_api` | Make any AGLedger API call (method, path, params). Every POST carries a generated `Idempotency-Key`; pass `idempotencyKey` to reuse the first attempt's key when retrying a call that may already have landed. The API returns `nextSteps` on every response for self-guided workflow discovery. |
-| `agledger_verify` | Verify a record audit export offline (COSE_Sign1 envelopes per RFC 9052, hash chain + envelope signatures, Ed25519 or ES256). No network calls. Returns the verifier's result as one JSON text block (the same object as `structuredContent`), with `summary` stating the verdict and the next step. Pass `trustAnchors` (`["sha256:<digest>"]`, the SPKI digest of a vault key the operator took out of band; the installer prints the first one) so the export's signed key statements are walked from a key you trust: an entry under a key the walk does not reach fails `CHAIN_SIGNING_KEY_UNANCHORED`, and a statement that does not hold fails `KEY_STATEMENT_INVALID`, `KEY_CLOSURE_INVALID` or `CHAIN_KEY_WINDOW_DRIFT`. The result carries `verdict`: `trusted` (text `Verdict: PASS`) only when the chain is valid and the walk reached a signature, `failed` (`Verdict: FAIL`), or `unanchored` (`Verdict: VERIFIED, NOT ANCHORED`), which is not a trusted verdict. A run is unanchored without `trustAnchors` (`keyTrust.status` `no_anchor`, the keys taken on the export's word) and when the pin was walked but no signature verified under a key it anchors (`no_anchored_signature`, as for an export of unsigned entries). `distrustedKeys` takes the operator's `VAULT_DISTRUSTED_KEYS` entries and needs `trustAnchors`, and a key both pinned and distrusted is refused (`INVALID_ARGUMENT`), as the Server refuses to start with it; a key statement a distrusted key signed counts for nothing at any instant, because the write times an export carries are not signed. Where an export lists a key retired at the instant the Server distrusts it from (`distrustedFrom`), earlier than its signed retirement, a pinned call without the same `distrustedKeys` entry fails on that key's window (`CHAIN_KEY_WINDOW_DRIFT`, or `KEY_CLOSURE_INVALID` where no closure retires it), and the finding names the entry (`distrustedKeys sha256:<hex>@<distrustedFrom>`), the listing's unsigned word, to confirm with the operator before passing it. `publicKeys` supplies keys (the `GET /v1/verification-keys` response works as is), `requireSuppliedKeys` refuses the export's embedded keys, `agentKeys` (the agents' cert public keys as JWKs) re-verifies the agent signatures sealed in the chain, and `federationKeys` (`{"<hubId>": "<key>"}`, each peer Server's federation key as its operator gives it) re-verifies the peer messages a receiving Server sealed on its `FEDERATION_*` entries, which fail `CHAIN_FEDERATION_WIRE_INVALID` when they do not hold. After a peer changes its federation key, give an array entry `history`, the JSON the peer serves at `GET /.well-known/agledger-federation-keys.json`, so the entries sealed under its earlier keys verify too. Input verify-core refuses, such as a supplied key window that is not RFC 3339, is `INVALID_ARGUMENT`. Built on the shared `@agledger/verify-core`. |
+| `agledger_verify` | Verify a record audit export offline (COSE_Sign1 envelopes per RFC 9052, hash chain + envelope signatures, Ed25519 or ES256). No network calls. Returns the verifier's result as one JSON text block (the same object as `structuredContent`), with `summary` stating the verdict and the next step. Pass `trustAnchors` (`["sha256:<digest>"]`, the SPKI digest of a vault key the operator took out of band; the installer prints the first one) so the export's signed key statements are walked from a key you trust: an entry under a key the walk does not reach fails `CHAIN_SIGNING_KEY_UNANCHORED`, and a statement that does not hold fails `KEY_STATEMENT_INVALID`, `KEY_CLOSURE_INVALID` or `CHAIN_KEY_WINDOW_DRIFT`. The result carries `verdict`: `trusted` (text `Verdict: PASS`) only when the chain is valid and the walk reached a signature, `failed` (`Verdict: FAIL`), or `unanchored` (`Verdict: VERIFIED, NOT ANCHORED`), which is not a trusted verdict. A run is unanchored without `trustAnchors` (`keyTrust.status` `no_anchor`, the keys taken on the export's word) and when the pin was walked but no signature verified under a key it anchors (`no_anchored_signature`, as for an export of unsigned entries). `distrustedKeys` takes the operator's `VAULT_DISTRUSTED_KEYS` entries and needs `trustAnchors`, and a key both pinned and distrusted is refused (`INVALID_ARGUMENT`), as the Server refuses to start with it; a key statement a distrusted key signed counts for nothing at any instant, because the write times an export carries are not signed. Where an export lists a key retired at the instant the Server distrusts it from (`distrustedFrom`), earlier than its signed retirement, a pinned call without the same `distrustedKeys` entry fails on that key's window (`CHAIN_KEY_WINDOW_DRIFT`, or `KEY_CLOSURE_INVALID` where no closure retires it), and the finding names the entry (`distrustedKeys sha256:<hex>@<distrustedFrom>`), the listing's unsigned word, to confirm with the operator before passing it. `publicKeys` supplies keys (the `GET /v1/verification-keys` response works as is), `requireSuppliedKeys` refuses the export's embedded keys, `agentKeys` (the agents' cert public keys as JWKs) re-verifies the agent signatures sealed in the chain, and `federationKeys` (`{"<hubId>": "<key>"}`, each peer Server's federation key as its operator gives it) re-verifies the peer messages a receiving Server sealed on its `FEDERATION_*` entries, which fail `CHAIN_FEDERATION_WIRE_INVALID` when they do not hold. After a peer changes its federation key, give an array entry `history`, the JSON the peer serves at `GET /.well-known/agledger-federation-keys.json`, so the entries sealed under its earlier keys verify too. Federation key histories need a Server 2.2 or later on the peer. Input verify-core refuses, such as a supplied key window that is not RFC 3339, is `INVALID_ARGUMENT`. Built on the shared `@agledger/verify-core`. |
 
 ## Resources
 
-Both are fetched live from the running instance, so neither can go stale.
+Both are fetched live from the running instance on every read.
 
 | Resource | Description |
 |------|-------------|
@@ -204,7 +204,7 @@ AGLedger is change control for AI agents, delivered as a signed ledger for agent
 - **Records**: structured commitments with acceptance criteria and tolerance bands
 - **Completions**: performer evidence recording what was reported to be done
 - **Verdicts**: principal accept/reject decisions on a Completion (the Gate), with settlement signals
-- **Audit chain**: notarized records as COSE_Sign1 envelopes, hash-chained, Ed25519-signed, tamper-evident, verifiable offline
+- **Audit chain**: notarized records as COSE_Sign1 envelopes, hash-chained, signed (Ed25519, or ES256 when the operator chooses it), tamper-evident, verifiable offline
 
 Learn more at [agledger.ai](https://www.agledger.ai) | [API docs](https://www.agledger.ai/docs/)
 
