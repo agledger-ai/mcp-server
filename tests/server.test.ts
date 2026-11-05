@@ -67,7 +67,7 @@ function buildEntry(
   payload: Record<string, unknown>,
 ): Record<string, unknown> {
   // Sign a faithful in-toto v1 Statement: the engine signs `{ predicate: ... }`
-  // where the predicate is the canonical row projection. The binding check
+  // where the predicate is the canonical projection of the entry. The binding check
   // re-derives this from recordId/entryType/payload; the envelope must
   // carry it or every entry trips CHAIN_PAYLOAD_BINDING_MISMATCH.
   const recordId = typeof payload.recordId === 'string' ? payload.recordId : 'REC-test-001';
@@ -231,8 +231,7 @@ describe('resource registration', () => {
     await expect(harness.client.readResource({ uri: 'agledger://openapi' })).rejects.toThrow();
   });
 
-  // an MCP-connected agent never learned /llms.txt existed. The
-  // CLI advertised it; the surface built specifically for agents did not.
+  // The llms.txt narrative is offered as a resource beside the OpenAPI spec.
   it('registers the agledger://llms.txt resource', async () => {
     const { resources } = await harness.client.listResources();
     const llms = resources.find((r) => r.uri === 'agledger://llms.txt');

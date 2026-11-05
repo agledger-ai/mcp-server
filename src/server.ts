@@ -80,10 +80,8 @@ const DOCS = {
     'Read llms.txt first if you are new to this API; read OpenAPI when you need exact routes.',
   openapi: '/openapi.json',
   openapiResource: 'agledger://openapi',
-  // The API's agent-oriented narrative. An MCP-connected agent never learned
-  // this existed: discover named only OpenAPI and resources/list offered only
-  // the spec, so the one integration surface built for agents hid the API's
-  // agent-facing documentation.
+  // The API's agent-oriented narrative, advertised by discover and offered
+  // through resources/list beside the OpenAPI spec.
   narrative: '/llms.txt',
   narrativeResource: 'agledger://llms.txt',
 } as const;
@@ -95,7 +93,7 @@ function mirrorContent(structured: unknown): CallToolResult['content'] {
 }
 
 /**
- * Structured error for CLI-origin failures (network, timeout, malformed input).
+ * Structured error for failures raised by this server (network, timeout, malformed input).
  * API-origin errors are forwarded verbatim without enrichment; if the API
  * returns a suggestion, agents see it; if not, that's an API concern to fix upstream.
  */
@@ -334,8 +332,8 @@ function verifyVerdictText(result: VerifyExportResult): string {
   } else {
     lines.push(
       'Verdict: VERIFIED, NOT ANCHORED. Nothing failed, but this is NOT a trusted verdict: no trustAnchors were ' +
-        'given, so every signing key was taken on the word of the export itself, and a key written into the ' +
-        "Server's database alone would verify.",
+        'given, so every signing key was taken on the word of the export itself, and a key planted on the ' +
+        'Server alone would verify.',
     );
     lines.push(
       'Next: call agledger_verify again with trustAnchors set to the sha256:<hex> digest of a vault key taken out of ' +
@@ -390,7 +388,7 @@ export function peerMessageLines(wire: { present: number; verified: number; fail
   const lines: string[] = [];
   if (wire.afterRetirement > 0) {
     lines.push(
-      `${wire.afterRetirement} of ${wire.present} sealed peer messages the peer signed under a key it had already retired: in order when the receiver's federation.peer_revoked audit row for the peer comes after them.`,
+      `${wire.afterRetirement} of ${wire.present} sealed peer messages the peer signed under a key it had already retired: in order when the receiver's federation.peer_revoked audit entry for the peer comes after them.`,
     );
   }
   if (wire.failed > 0) {
@@ -505,14 +503,14 @@ const VERIFY_ARGS = {
         '.data array is unwrapped automatically, so the agledger_api response can be ' +
         'passed straight through, and each key\'s signed statements are walked with trustAnchors). ' +
         'Merged over any keys embedded in the export. Where a key came from is not whether it is ' +
-        'trusted: the Server serves these from the same database as the export. That is trustAnchors.',
+        'trusted: the Server serves these along with the export. That is trustAnchors.',
     ),
   trustAnchors: z
     .array(z.string())
     .optional()
     .describe(
       'Recommended. SPKI digests ("sha256:<64 hex>") of vault keys you took out of band: the installer ' +
-        'prints the first vault key\'s, and the Server\'s signing-key-digest.js derives one from a key ' +
+        'prints the first vault key\'s, and you can derive one as the SHA-256 of the DER-encoded SubjectPublicKeyInfo of a key ' +
         'the operator holds. Ask the operator for it; do not take it from the export ' +
         '(exportMetadata.anchoredFrom) or from GET /v1/verification-keys, which are the Server\'s own word. ' +
         'The signed key statements the export carries are walked from these: an entry signed by a key ' +
@@ -870,7 +868,7 @@ export class AgledgerMcpServer {
           'Verify an AGLedger record audit export offline (format 2.0, COSE_Sign1). ' +
           'Decodes each entry\'s tagged COSE_Sign1 envelope (RFC 9052), recomputes ' +
           'sha256 over the envelope bytes, walks the hash chain, cross-checks the protected-' +
-          'header chain claim against the row columns, and verifies every envelope signature (Ed25519 or ES256, dispatched from the trusted key material; anything else fails closed). ' +
+          'header chain claim against the entry fields the export lists beside the signed bytes, and verifies every envelope signature (Ed25519 or ES256, dispatched from the trusted key material; anything else fails closed). ' +
           'No network calls. Pass trustAnchors (the sha256:<hex> digest of a vault key the operator ' +
           'took out of band) so the export\'s signed key statements are walked from a key you trust: ' +
           'without it the keys are taken on the export\'s word and keyTrust.status is "no_anchor". ' +
@@ -1047,9 +1045,8 @@ export class AgledgerMcpServer {
 
     /**
      * Proxies GET /llms.txt at read time. The API writes this narrative for
-     * agents, and an MCP-connected agent had no way to learn it existed: the
-     * CLI advertised it, this server did not. Same live-fetch approach as the
-     * spec resource, so it cannot go stale.
+     * agents. Same live-fetch approach as the spec resource, so it cannot go
+     * stale.
      */
     this.mcp.registerResource(
       'agledger-llms-txt',

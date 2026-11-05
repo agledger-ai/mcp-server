@@ -178,7 +178,7 @@ describe('agledger_verify peer-message summary', () => {
     expect(mixed[0]).toBe('2 of 5 sealed peer messages failed CHAIN_FEDERATION_WIRE_INVALID.');
     expect(mixed[1]).toMatch(/^2 of 5 sealed peer messages were hashed and matched to their entry but their peer signature was not checked/);
     expect(peerMessageLines({ present: 2, verified: 2, failed: 0, afterRetirement: 1 })).toEqual([
-      "1 of 2 sealed peer messages the peer signed under a key it had already retired: in order when the receiver's federation.peer_revoked audit row for the peer comes after them.",
+      "1 of 2 sealed peer messages the peer signed under a key it had already retired: in order when the receiver's federation.peer_revoked audit entry for the peer comes after them.",
     ]);
   });
 });

@@ -4,6 +4,13 @@ All notable changes to the AGLedger MCP Server will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- The README says the interactive API docs at `/docs` are available only when the operator enables them.
+- Tool and resource descriptions describe the export a caller holds rather than the Server's storage.
+
 ## [3.1.0] - 2026-11-05
 
 ### Added
@@ -199,7 +206,7 @@ Published with npm build provenance (verify with `npm audit signatures`) and a C
 
 ### Changed
 
-- `agledger_verify` runs on `@agledger/verify-core@^0.1.3`. A denormalized `payload` rewritten while `coseSign1` stays intact fails `CHAIN_PAYLOAD_BINDING_MISMATCH`, and a signature skipped because of an upstream chain break reports `not-checked`.
+- `agledger_verify` runs on `@agledger/verify-core@^0.1.3`. A `payload` rewritten while `coseSign1` stays intact fails `CHAIN_PAYLOAD_BINDING_MISMATCH`, and a signature skipped because of an upstream chain break reports `not-checked`.
 
 ## [2.4.6] - 2026-05-28
 
