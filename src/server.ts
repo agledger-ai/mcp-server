@@ -358,9 +358,23 @@ function verifyVerdictText(result: VerifyExportResult): string {
       `${present - verified} of ${present} agent signatures were not checked: pass agentKeys with the agents' cert public keys to re-verify them.`,
     );
   }
+  lines.push(entryCountLine(result.entryCount));
   lines.push(...peerMessageLines(result.federationWire));
   lines.push(...evidenceLines(result.evidenceBinding));
   return lines.join('\n');
+}
+
+/**
+ * What the export's entry count was held to. A chain cut from the end still
+ * verifies entry by entry, so the report names the stated count, if any, that
+ * stood behind the number of entries it verified.
+ */
+export function entryCountLine(count: { expectedEntries: number | null; statedEntries: number | null }): string {
+  if (count.expectedEntries !== null) return `Entry count: held to the checkpoint at position ${count.expectedEntries}.`;
+  if (count.statedEntries !== null) {
+    return `Entry count: held to the ${count.statedEntries} the export states; it names no checkpoint for this record yet.`;
+  }
+  return "Entry count: the file's own; the export states no count and names no checkpoint.";
 }
 
 /**
@@ -407,8 +421,9 @@ export function peerMessageLines(wire: { present: number; verified: number; fail
  * Every code `agledger_verify` can report, named in its description so a model
  * can branch on them. `ExportCodesMissing` below makes the compiler fail when
  * verify-core adds an export-level code this list does not carry.
- * CHECKPOINT_* and TENANT_* are dump-verifier codes and never come back from
- * an audit export. KEY_* are findings on the export's signed key statements,
+ * CHECKPOINT_ROW_MISSING is the one CHECKPOINT_* code an export reports (it
+ * carries fewer entries than its checkpoint position); the other CHECKPOINT_*
+ * and the TENANT_* codes are dump-verifier codes. KEY_* are findings on the export's signed key statements,
  * reported at position 0 when trustAnchors are given.
  */
 const EXPORT_FAILURE_CODES = [
@@ -440,6 +455,7 @@ const EXPORT_FAILURE_CODES = [
   'CHAIN_KEY_WINDOW_DRIFT',
   'UNSUPPORTED_FORMAT',
   'CHAIN_EMPTY',
+  'CHECKPOINT_ROW_MISSING',
 ] as const satisfies readonly FailureCode[];
 
 type ExportCodesMissing = Exclude<
@@ -881,6 +897,8 @@ export class AgledgerMcpServer {
           'could not compute the key\'s algorithm: upgrade, and never read it as a pass. Obtain the export via agledger_api with method=GET, path=/v1/records/{id}/audit-export. ' +
           'Add params \'{"evidence":true}\' to inline each completion\'s evidence and each dispute\'s filed payload: every inlined body is ' +
           're-bound to the hash its entry signs (result.evidenceBinding; an edited one fails CHAIN_EVIDENCE_BINDING_MISMATCH). ' +
+          'Pass the export exactly as fetched: its length is held to the counts it states (result.entryCount), so an export with ' +
+          'entries removed from the end fails CHECKPOINT_ROW_MISSING or CHAIN_POSITION_GAP. ' +
           'For the raw COSE_Sign1 stream, use path=/v1/records/{id}/attestation.',
         inputSchema: toolInput(VERIFY_ARGS),
         annotations: {

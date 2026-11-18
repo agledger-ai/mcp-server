@@ -101,6 +101,13 @@ describe('agledger-mcp exit codes', () => {
     expect(r.code).toBe(0);
   });
 
+  it.each(['--version', '-V'])('prints the version on stdout and exits 0 for %s, with no credential set', async (flag) => {
+    const r = await run([flag]);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toMatch(/^agledger-mcp \d+\.\d+\.\d+\n$/);
+    expect((await run(['--help'])).stderr).toContain('--version, -V');
+  });
+
   it.each([
     ['--timeout', ['--timeout', 'soon']],
     ['--timeout', ['--timeout', '0']],

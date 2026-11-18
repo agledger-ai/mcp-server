@@ -8,11 +8,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [3.2.0] - 2026-11-18
 
+### Added
+
+- `agledger-mcp --version` (`-V`) prints the version and exits `0`, with no credential needed.
+
 ### Changed
 
 - **`agledger_verify` runs on `@agledger/verify-core` 2.2.0.** A sealed federation message is placed in its key's window with 300 seconds allowed at each edge, as the Server's receiver guidance gives it: one signed within that of a key change was failed or reported as after retirement, and now verifies on the key it names. A signed payload string that begins with U+FEFF no longer fails `CHAIN_PAYLOAD_BINDING_MISMATCH` against its row.
 - The README says the interactive API docs at `/docs` are available only when the operator enables them.
 - Tool and resource descriptions describe the export a caller holds rather than the Server's storage.
+- **`agledger_verify` fails an export cut from the end.** The export is held to the two entry counts it states: fewer entries than `exportMetadata.expectedEntries`, the position of the record's latest checkpoint, is `CHECKPOINT_ROW_MISSING`, and fewer than `exportMetadata.totalEntries` is `CHAIN_POSITION_GAP`. The summary has an `Entry count` line saying which count the chain was held to, and `result.entryCount` carries both. An export that verified on 3.1.0 with its tail removed now fails.
 
 ## [3.1.0] - 2026-11-05
 

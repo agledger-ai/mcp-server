@@ -57,7 +57,7 @@ function timeoutProblem(raw: string): string | undefined {
 }
 
 function main(): void {
-  let values: { 'api-key'?: string; 'api-url'?: string; timeout?: string; help?: boolean };
+  let values: { 'api-key'?: string; 'api-url'?: string; timeout?: string; help?: boolean; version?: boolean };
   try {
     ({ values } = parseArgs({
       options: {
@@ -65,6 +65,7 @@ function main(): void {
         'api-url': { type: 'string', short: 'u' },
         timeout: { type: 'string' },
         help: { type: 'boolean', short: 'h' },
+        version: { type: 'boolean', short: 'V' },
       },
       strict: true,
     }));
@@ -76,6 +77,13 @@ function main(): void {
       `Error: ${err instanceof Error ? err.message : String(err)}\nRun \`agledger-mcp --help\` for usage.\n`,
     );
     process.exit(EXIT_USAGE_ERROR);
+  }
+
+  if (values.version) {
+    // Nothing has been connected yet, so stdout is still free for a caller to
+    // capture; once the server starts it belongs to the MCP transport.
+    process.stdout.write(`agledger-mcp ${SERVER_VERSION}\n`);
+    process.exit(0);
   }
 
   if (values.help) {
@@ -95,6 +103,7 @@ Options:
                     out may still have been applied: retry a POST with the
                     idempotencyKey the timeout error names, never a new one.
   --help, -h        Show this help message
+  --version, -V     Print the version and exit
 
 Credentials: one is required. An API key wins when set; otherwise an OIDC
 token source is exchanged for a short-lived cert (POST /v1/auth/oidc/cert),

@@ -899,7 +899,8 @@ describe('agledger_verify', () => {
     expect(content.keyTrust.anchoredKeyIds).toHaveLength(1);
     expect((result.structuredContent as { verdict: string }).verdict).toBe('trusted');
     expect(verdictOf(result)).toBe(
-      `Verdict: PASS. Nothing failed, and every signature was checked under a key the signed key statements link to a trust anchor you gave (${enginePin()}). 3/3 entries verified.`,
+      `Verdict: PASS. Nothing failed, and every signature was checked under a key the signed key statements link to a trust anchor you gave (${enginePin()}). 3/3 entries verified.\n` +
+        'Entry count: held to the 3 the export states; it names no checkpoint for this record yet.',
     );
   });
 
