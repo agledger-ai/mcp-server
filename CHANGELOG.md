@@ -6,8 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [3.2.0] - 2026-11-18
+
 ### Changed
 
+- **`agledger_verify` runs on `@agledger/verify-core` 2.2.0.** A sealed federation message is placed in its key's window with 300 seconds allowed at each edge, as the Server's receiver guidance gives it: one signed within that of a key change was failed or reported as after retirement, and now verifies on the key it names. A signed payload string that begins with U+FEFF no longer fails `CHAIN_PAYLOAD_BINDING_MISMATCH` against its row.
 - The README says the interactive API docs at `/docs` are available only when the operator enables them.
 - Tool and resource descriptions describe the export a caller holds rather than the Server's storage.
 

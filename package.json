@@ -1,6 +1,6 @@
 {
   "name": "@agledger/mcp-server",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "description": "AGLedger MCP server: the AGLedger API as MCP tools, so any MCP-capable agent can write to the signed ledger. Patent pending.",
   "license": "SEE LICENSE IN LICENSE",
   "author": "AGLedger LLC",
@@ -56,7 +56,7 @@
     "prepublishOnly": "npm run build && npm run lint:pkg"
   },
   "dependencies": {
-    "@agledger/verify-core": "^2.1.0",
+    "@agledger/verify-core": "^2.2.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "zod": "^3.25.0 || ^4.0.0"
   },
