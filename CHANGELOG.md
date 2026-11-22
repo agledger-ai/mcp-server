@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Added
+
+- **`agledger_api` returns a text response as the Server sent it.** The `html` audit export of AGLedger Server 3.0.0 (and a `csv` or `ndjson` one) was returned as a JSON object wrapping an escaped string; the text block is now the page itself, and `structuredContent` keeps `_raw` and `_contentType`.
+- The `agledger_api` description and the README say how to reach the request fields and filters of AGLedger Server 3.0.0: `producedBy` on a record or completion, `traceId`, `originRecordId`, `producedBy[key]` and the numeric `criteriaGt/Gte/Lt/Lte` and `metadataGt/Gte/Lt/Lte` bounds on search, `GET /v1/records/counts` with `groupBy`, and `signatureMeaning` on a verdict (taken only on an ephemeral OIDC cert; the Server refuses it with 422 on an API key). A test holds that object-valued parameters serialize to the bracket form the Server reads.
+
+### Changed
+
+- The `agledger_api` description says what a 409 `IDEMPOTENCY_KEY_IN_FLIGHT`, a 409 `IDEMPOTENT_WRITE_COMMITTED` and a 503 `SERVER_SHUTTING_DOWN` ask of the caller.
+
 ## [3.2.0] - 2026-11-18
 
 ### Added

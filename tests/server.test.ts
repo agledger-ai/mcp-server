@@ -664,6 +664,52 @@ describe('agledger_api', () => {
     expect(content._contentType).toBe('text/html');
   });
 
+  it('returns a successful text response (the html audit export) as the Server sent it', async () => {
+    const html = '<!doctype html>\n<script type="application/json" id="agledger-audit-export">{"a":1}</script>\n';
+    const mockFetch = vi.fn().mockResolvedValueOnce(
+      new Response(html, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } }),
+    );
+    vi.stubGlobal('fetch', mockFetch);
+
+    const result = await harness.client.callTool({
+      name: 'agledger_api',
+      arguments: { method: 'GET', path: '/v1/records/r1/audit-export', params: '{"format":"html"}' },
+    });
+
+    expect(result.isError).toBeFalsy();
+    expect((result.content as { text: string }[])[0].text).toBe(html);
+    expect((result.structuredContent as Record<string, unknown>)._raw).toBe(html);
+    expect(decodeURIComponent(mockFetch.mock.calls[0][0] as string)).toContain('format=html');
+  });
+
+  it('sends the numeric bounds and producedBy filters in bracket form', async () => {
+    const mockFetch = vi.fn().mockResolvedValueOnce(
+      new Response(JSON.stringify({ data: [] }), { status: 200, headers: { 'content-type': 'application/json' } }),
+    );
+    vi.stubGlobal('fetch', mockFetch);
+
+    await harness.client.callTool({
+      name: 'agledger_api',
+      arguments: {
+        method: 'GET',
+        path: '/v1/records/counts',
+        params: JSON.stringify({
+          criteriaGte: { amount: 500 },
+          metadataLt: { score: '0.5' },
+          producedBy: { modelId: 'm-1' },
+          groupBy: 'status,type',
+        }),
+      },
+    });
+
+    const url = decodeURIComponent(mockFetch.mock.calls[0][0] as string);
+    expect(url).toContain('criteriaGte[amount]=500');
+    expect(url).toContain('metadataLt[score]=0.5');
+    expect(url).toContain('producedBy[modelId]=m-1');
+    expect(url).toContain('groupBy=status,type');
+    expect(url).not.toContain('[object Object]');
+  });
+
   it('sends query params for GET requests', async () => {
     const mockFetch = vi.fn().mockResolvedValueOnce(
       new Response(JSON.stringify({ data: [] }), {

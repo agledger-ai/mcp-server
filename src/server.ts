@@ -739,6 +739,20 @@ export class AgledgerMcpServer {
           'auditor verifies offline; metadata[key]=value filters an unsigned annotation instead. ' +
           'If a call fails, the error says how to recover: recoveryHint on an error from the Server, ' +
           'suggestion on an error this tool raises itself (a bad argument, a timeout, a credential failure). ' +
+          'Say what produced the work: POST /v1/records and POST /v1/records/{id}/completions take an optional ' +
+          'producedBy object (modelProvider, modelId, modelVersion, agentSoftware, agentSoftwareVersion, promptDigest, ' +
+          'configDigest; digests are sha256:, sha384: or sha512: hex). Search takes traceId, originRecordId, ' +
+          'producedBy[key]=value and numeric bounds written as criteriaGte[amount]=500 (also criteriaGt/Lt/Lte and the ' +
+          'metadata twins); pass them in params as nested objects, e.g. {"criteriaGte":{"amount":500}}. ' +
+          'GET /v1/records/counts takes the same filters plus groupBy, up to two comma-joined dimensions ' +
+          '(type, status, performerAgentId, principalAgentId, category, gateMode, operatingMode, createdDay, createdMonth). ' +
+          'A verdict (POST /v1/records/{id}/verdict) may add signatureMeaning (authorship, review, approval or responsibility): ' +
+          'it is taken only on an ephemeral OIDC cert, and the Server refuses it with 422 on an API key. ' +
+          'GET /v1/records/{id}/audit-export takes format=html and returns the page as text exactly as the Server sent it; ' +
+          'use the default JSON export for agledger_verify. ' +
+          'On a keyed write, 409 IDEMPOTENCY_KEY_IN_FLIGHT means the first attempt is still running: retry with the same key ' +
+          'after Retry-After. 409 IDEMPOTENT_WRITE_COMMITTED means it already landed: follow its refreshUrl, do not retry. ' +
+          '503 SERVER_SHUTTING_DOWN is retryable. ' +
           'For the full API catalog, GET /openapi.json (or read the agledger://openapi resource); ' +
           'for prose orientation, GET /llms.txt (or read the agledger://llms.txt resource). ' +
           'For GET/DELETE, params become query parameters. For POST/PUT/PATCH, params become the JSON body. ' +
@@ -833,8 +847,13 @@ export class AgledgerMcpServer {
 
           if (response.ok) {
             const body = response.body as Record<string, unknown>;
+            // A text response (format=html|csv|ndjson on an audit export) is
+            // handed back as the Server sent it, not as an escaped JSON string.
+            // structuredContent keeps the {_raw, _contentType} wrapper.
+            const text =
+              typeof body?._raw === 'string' ? [{ type: 'text' as const, text: body._raw }] : mirrorContent(body);
             return {
-              content: mirrorContent(body),
+              content: text,
               structuredContent: body,
             };
           }
