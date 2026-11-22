@@ -6,20 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
-### Added
-
-- **`agledger_api` returns a text response as the Server sent it.** The `html` audit export of AGLedger Server 3.0.0 (and a `csv` or `ndjson` one) was returned as a JSON object wrapping an escaped string; the text block is now the page itself, and `structuredContent` keeps `_raw` and `_contentType`.
-- The `agledger_api` description and the README say how to reach the request fields and filters of AGLedger Server 3.0.0: `producedBy` on a record or completion, `traceId`, `originRecordId`, `producedBy[key]` and the numeric `criteriaGt/Gte/Lt/Lte` and `metadataGt/Gte/Lt/Lte` bounds on search, `GET /v1/records/counts` with `groupBy`, and `signatureMeaning` on a verdict (taken only on an ephemeral OIDC cert; the Server refuses it with 422 on an API key). A test holds that object-valued parameters serialize to the bracket form the Server reads.
-
-### Changed
-
-- The `agledger_api` description says what a 409 `IDEMPOTENCY_KEY_IN_FLIGHT`, a 409 `IDEMPOTENT_WRITE_COMMITTED` and a 503 `SERVER_SHUTTING_DOWN` ask of the caller.
-
 ## [3.2.0] - 2026-11-18
 
 ### Added
 
 - `agledger-mcp --version` (`-V`) prints the version and exits `0`, with no credential needed.
+- **`agledger_api` returns a text response as the Server sent it.** The `html` audit export of AGLedger Server 3.0.0 (and a `csv` or `ndjson` one) was returned as a JSON object wrapping an escaped string; the text block is now the page itself, and `structuredContent` keeps `_raw` and `_contentType`.
+- The `agledger_api` description and the README say how to reach the request fields and filters of AGLedger Server 3.0.0: `producedBy` on a record or completion, `traceId`, `originRecordId`, `producedBy[key]` and the numeric `criteriaGt/Gte/Lt/Lte` and `metadataGt/Gte/Lt/Lte` bounds on search, `GET /v1/records/counts` with `groupBy`, and `signatureMeaning` on a verdict (taken only on an ephemeral OIDC cert; the Server refuses it with 422 on an API key). A test holds that object-valued parameters serialize to the bracket form the Server reads.
 
 ### Changed
 
@@ -27,6 +20,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - The README says the interactive API docs at `/docs` are available only when the operator enables them.
 - Tool and resource descriptions describe the export a caller holds rather than the Server's storage.
 - **`agledger_verify` fails an export cut from the end.** The export is held to the two entry counts it states: fewer entries than `exportMetadata.expectedEntries`, the position of the record's latest checkpoint, is `CHECKPOINT_ROW_MISSING`, and fewer than `exportMetadata.totalEntries` is `CHAIN_POSITION_GAP`. The summary has an `Entry count` line saying which count the chain was held to, and `result.entryCount` carries both. An export that verified on 3.1.0 with its tail removed now fails.
+- The `agledger_api` description says what a 409 `IDEMPOTENCY_KEY_IN_FLIGHT`, a 409 `IDEMPOTENT_WRITE_COMMITTED` and a 503 `SERVER_SHUTTING_DOWN` ask of the caller.
 
 ## [3.1.0] - 2026-11-05
 
