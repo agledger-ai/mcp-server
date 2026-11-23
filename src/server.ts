@@ -350,6 +350,17 @@ function verifyVerdictText(result: VerifyExportResult): string {
         `link to a trust anchor you gave (${trust.anchors.join(', ')}). ` +
         `${result.verifiedEntries}/${result.totalEntries} entries verified.`,
     );
+  } else if (!result.valid) {
+    lines.push(
+      `Verdict: NOT ANCHORED. The trustAnchors (${trust.anchors.join(', ')}) reach none of the signing keys in this ` +
+        'export, so every signed entry reads CHAIN_SIGNING_KEY_UNANCHORED, but the export verifies without them: ' +
+        'nothing in it fails on its own. This is the result for an export from another Server than the one pinned, ' +
+        'and equally for one re-signed wholesale under keys of its own. NOT a trusted verdict.',
+    );
+    lines.push(
+      'Next: check with the operator that each trustAnchors digest is a vault key of the install that wrote this ' +
+        'export, and call agledger_verify again with the right one.',
+    );
   } else if (trust.status === 'no_anchored_signature') {
     lines.push(
       'Verdict: VERIFIED, NOT ANCHORED. Nothing failed, but this is NOT a trusted verdict: the trustAnchors ' +
@@ -601,8 +612,27 @@ const VERIFY_ARGS = {
         'change verify; each message is placed in its key\'s window by its signed wire.timestamp. A hub may appear ' +
         'twice, to pin a key no succession links or one the history does not list. ' +
         'Federation key histories need a Server 2.2 or later on the peer. ' +
-        'result.federationWire counts present, verified, failed and afterRetirement (verified, but signed by the ' +
-        'peer under a key it had already retired).',
+        'A message signed more than 300 seconds after its key\'s retirement fails CHAIN_FEDERATION_WIRE_INVALID unless ' +
+        'allowAfterRetirement is true. result.federationWire counts present, verified, failed and afterRetirement ' +
+        '(accepted under allowAfterRetirement, signed by the peer under a key it had already retired).',
+    ),
+  allowAfterRetirement: z
+    .boolean()
+    .optional()
+    .describe(
+      'Accept a sealed peer message signed under a key after that key\'s retirement, and count it in ' +
+        'result.federationWire.afterRetirement, for a peer that kept signing briefly after rotating because its process ' +
+        'had not restarted. Without it such a message fails CHAIN_FEDERATION_WIRE_INVALID.',
+    ),
+  expectedEntryCount: z
+    .number()
+    .int()
+    .min(0)
+    .optional()
+    .describe(
+      'The number of entries the export must hold, taken out of band (the record\'s entry count from the Server or an ' +
+        'earlier export). The counts an export states about itself are unsigned, so an export cut from the end with them ' +
+        'deleted verifies; with this set it fails CHAIN_POSITION_GAP, and result.optionalChecks.entry_count is "applied".',
     ),
   requireKeyId: z
     .string()
@@ -939,7 +969,9 @@ export class AgledgerMcpServer {
           'without it the keys are taken on the export\'s word and keyTrust.status is "no_anchor". ' +
           'result.verdict is "trusted" (PASS: valid, and keyTrust.status "walked"), "failed", or "unanchored" ' +
           '(VERIFIED, NOT ANCHORED: valid, but keyTrust.status "no_anchor", or "no_anchored_signature" when the ' +
-          'anchors were walked and no signature verified under a key they anchor); an unanchored result is not a trusted verdict. ' +
+          'anchors were walked and no signature verified under a key they anchor; also NOT ANCHORED with valid false when the ' +
+          'trustAnchors reach none of the export\'s keys and it verifies without them, as for another Server\'s pin); ' +
+          'an unanchored result is not a trusted verdict, and isError is set only for "failed". ' +
           'result.summary states the verdict in words and the next step. ' +
           'On failure, brokenAt pinpoints the first entry that failed and its canonical code ' +
           `(${EXPORT_FAILURE_CODES.join(', ')}); CHAIN_UNSUPPORTED_ALGORITHM means this build ` +
@@ -974,6 +1006,8 @@ export class AgledgerMcpServer {
             distrustedKeys,
             requireKeyId,
             requireSuppliedKeys,
+            allowAfterRetirement,
+            expectedEntryCount,
           } = args;
 
           const decodedExport = parseJsonObject(exportRaw, 'export');
@@ -1053,6 +1087,8 @@ export class AgledgerMcpServer {
             federationKeys,
             requireKeyId,
             requireSuppliedKeys,
+            ...(allowAfterRetirement !== undefined ? { allowAfterRetirement } : {}),
+            ...(expectedEntryCount !== undefined ? { expectedEntryCount } : {}),
             ...(anchored ? { trustAnchors, distrustedKeys } : {}),
           });
 
@@ -1064,7 +1100,9 @@ export class AgledgerMcpServer {
           return {
             content: mirrorContent(structured),
             structuredContent: structured,
-            isError: !result.valid,
+            // A pin that was not met is not a failure of the export (verdict
+            // "unanchored"); only a failed verdict is.
+            isError: verdict === 'failed',
           };
         } catch (err) {
           // verify-core throws TypeError only on input it refuses (a supplied

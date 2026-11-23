@@ -981,24 +981,67 @@ describe('agledger_verify', () => {
       name: 'agledger_verify',
       arguments: { export: makeTestExport(kp), trustAnchors: [pinOf(kp)] },
     })) as CallToolResult;
-    expect(result.isError).toBe(true);
+    // Nothing links the key to the pin, and nothing fails without it: not
+    // anchored, which is neither a pass nor a tampered export.
+    expect(result.structuredContent).toMatchObject({ verdict: 'unanchored', valid: false });
+    expect(result.isError).toBeFalsy();
     expect((result.structuredContent as { brokenAt: { code: string } }).brokenAt.code).toBe('CHAIN_SIGNING_KEY_UNANCHORED');
+    expect(verdictOf(result)).toContain('Verdict: NOT ANCHORED.');
     expect(verdictOf(result)).not.toContain('PASS');
   });
 
-  it('pinned on a key nothing links to, fails CHAIN_SIGNING_KEY_UNANCHORED and says so', async () => {
+  it('pinned on a key nothing links to, a tampered export still FAILS', async () => {
+    const result = (await harness.client.callTool({
+      name: 'agledger_verify',
+      arguments: { export: makeBrokenChain(), trustAnchors: [`sha256:${'ab'.repeat(32)}`] },
+    })) as CallToolResult;
+    expect(result.isError).toBe(true);
+    expect((result.structuredContent as { verdict: string }).verdict).toBe('failed');
+  });
+
+  it('expectedEntryCount fails an export cut from the end with its counts deleted, which otherwise verifies', async () => {
+    const exp = makeTestExport();
+    (exp.entries as unknown[]).pop();
+    delete (exp.exportMetadata as Record<string, unknown>).totalEntries;
+    const plain = (await harness.client.callTool({ name: 'agledger_verify', arguments: { export: exp } })) as CallToolResult;
+    expect(plain.isError).toBeFalsy();
+    const held = (await harness.client.callTool({
+      name: 'agledger_verify',
+      arguments: { export: exp, expectedEntryCount: 3 },
+    })) as CallToolResult;
+    expect(held.isError).toBe(true);
+    expect(held.structuredContent).toMatchObject({
+      brokenAt: { code: 'CHAIN_POSITION_GAP' },
+      optionalChecks: { entry_count: 'applied' },
+    });
+    const bad = (await harness.client.callTool({
+      name: 'agledger_verify',
+      arguments: { export: exp, expectedEntryCount: -1 },
+    })) as CallToolResult;
+    expect(bad.isError).toBe(true);
+  });
+
+  it('accepts allowAfterRetirement', async () => {
+    const result = (await harness.client.callTool({
+      name: 'agledger_verify',
+      arguments: { export: makeTestExport(), allowAfterRetirement: true },
+    })) as CallToolResult;
+    expect(result.isError).toBeFalsy();
+  });
+
+  it('pinned on a key nothing links to, an untampered export is NOT ANCHORED and says to check the pin', async () => {
     const result = (await harness.client.callTool({
       name: 'agledger_verify',
       arguments: { export: makeTestExport(), trustAnchors: [`sha256:${'ab'.repeat(32)}`] },
     })) as CallToolResult;
 
-    expect(result.isError).toBe(true);
+    expect(result.isError).toBeFalsy();
     const content = result.structuredContent as { brokenAt: { position: number; code: string } };
     expect(content.brokenAt).toMatchObject({ position: 1, code: 'CHAIN_SIGNING_KEY_UNANCHORED' });
     const verdict = verdictOf(result);
-    expect(verdict).toContain('Verdict: FAIL at position 1: CHAIN_SIGNING_KEY_UNANCHORED.');
-    expect((result.structuredContent as { verdict: string }).verdict).toBe('failed');
-    expect(verdict).toContain('Next: ');
+    expect(verdict).toContain('Verdict: NOT ANCHORED. The trustAnchors (sha256:');
+    expect((result.structuredContent as { verdict: string }).verdict).toBe('unanchored');
+    expect(verdict).toContain('Next: check with the operator');
     expect(verdict).not.toContain('PASS');
     expect(verdict).not.toContain('linked by signed key statements to your trust anchor');
   });
