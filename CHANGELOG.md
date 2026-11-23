@@ -24,6 +24,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - **Built on `@modelcontextprotocol/server` 2.x** in place of `@modelcontextprotocol/sdk` 1.x. The runtime dependency tree drops from 97 packages to 5 (the server, its core, `zod`, `@agledger/verify-core` and `cborg`); the HTTP framework, auth and schema-validator packages the 1.x SDK pulled in are no longer installed. The tool names, descriptions, arguments (and which are required) and results are unchanged. `tools/list` now reports each input schema as JSON Schema 2020-12 (`$schema` is `https://json-schema.org/draft/2020-12/schema`, was draft-07), and no longer sends the default `execution.taskSupport: "forbidden"` on each tool.
 - **`zod` 4 is required.** The `zod` dependency is `^4.2.0`, the range `@modelcontextprotocol/server` declares, so a host installs one copy; the `zod` peer dependency is gone. An embedding host that held zod 3 gets zod 4 alongside it.
 
+### Fixed
+
+- **`agledger_api` refuses a `params` value nested below the bracket form, and sends nothing.** `{ criteriaGte: { amount: 500 } }` becomes `criteriaGte[amount]=500`; an object one level deeper, or inside an array, used to be sent as `[object Object]`, which the Server read as a filter on that string. It now returns `INVALID_ARGUMENT`.
+
 ## [3.1.0] - 2026-11-05
 
 ### Added

@@ -29,11 +29,24 @@ function stripTrailingSlashes(s: string): string {
  * A Date becomes ISO-8601 rather than the JS locale form, which the date-time
  * query params reject.
  */
-/** String form of a query value: a Date as ISO-8601, anything else as `String()` renders it. */
-function queryScalar(value: unknown): string {
+/** A query value the bracket form cannot carry: an object or array nested below its one level. */
+export class QueryShapeError extends Error {
+  constructor(readonly param: string) {
+    super(`Query parameter ${param} is a nested object or array, which has no query-string form: the bracket form goes one level deep (criteriaGte[amount]=500).`);
+    this.name = 'QueryShapeError';
+  }
+}
+
+/**
+ * A query value as text. A value below the bracket form's one level is
+ * refused rather than sent as `[object Object]`, which the Server would read
+ * as a filter on that literal string.
+ */
+function queryScalar(name: string, value: unknown): string {
   if (value instanceof Date) return value.toISOString();
-  // Callers pass scalars; an object here keeps the `String()` form it has always had.
-  return String(value);
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') return String(value);
+  throw new QueryShapeError(name);
 }
 
 function appendQueryParam(search: URLSearchParams, key: string, value: unknown): void {
@@ -44,18 +57,18 @@ function appendQueryParam(search: URLSearchParams, key: string, value: unknown):
   if (Array.isArray(value)) {
     for (const item of value) {
       if (item === undefined || item === null) continue;
-      search.append(key, item instanceof Date ? item.toISOString() : String(item));
+      search.append(key, queryScalar(key, item));
     }
     return;
   }
   if (typeof value === 'object') {
     for (const [sub, subValue] of Object.entries(value as Record<string, unknown>)) {
       if (subValue === undefined || subValue === null) continue;
-      search.set(`${key}[${sub}]`, queryScalar(subValue));
+      search.set(`${key}[${sub}]`, queryScalar(`${key}[${sub}]`, subValue));
     }
     return;
   }
-  search.set(key, queryScalar(value));
+  search.set(key, queryScalar(key, value));
 }
 
 export interface RequestOptions {

@@ -22,7 +22,7 @@ import {
   type SuppliedKeyEntry,
   type VerifyExportResult,
 } from '@agledger/verify-core';
-import { ApiClient } from './api-client.js';
+import { ApiClient, QueryShapeError } from './api-client.js';
 import {
   OidcCertCredential,
   OidcExchangeError,
@@ -888,6 +888,9 @@ export class AgledgerMcpServer {
                 : 'Check that the API URL is correct. Try GET /health to verify connectivity.',
               sentKey ? { idempotencyKey: sentKey } : undefined,
             );
+          }
+          if (err instanceof QueryShapeError) {
+            return errorResult(err.message, 'INVALID_ARGUMENT', 'Give each params entry a string, number or boolean, or an object of them one level deep (params: { criteriaGte: { amount: 500 } }). Nothing was sent.');
           }
           return errorResult(err instanceof Error ? err.message : String(err), 'UNKNOWN_ERROR');
         }

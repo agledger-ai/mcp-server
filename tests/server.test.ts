@@ -709,6 +709,20 @@ describe('agledger_api', () => {
     expect(url).not.toContain('[object Object]');
   });
 
+  it('refuses a params value nested below the bracket form, and sends nothing', async () => {
+    const mockFetch = vi.fn();
+    vi.stubGlobal('fetch', mockFetch);
+
+    const result = await harness.client.callTool({
+      name: 'agledger_api',
+      arguments: { method: 'GET', path: '/v1/records/search', params: JSON.stringify({ criteriaGte: { amount: { min: 1 } } }) },
+    });
+
+    expect(result.isError).toBe(true);
+    expect((result.structuredContent as Record<string, unknown>).code).toBe('INVALID_ARGUMENT');
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
   it('sends query params for GET requests', async () => {
     const mockFetch = vi.fn().mockResolvedValueOnce(
       Response.json({ data: [] }, {
