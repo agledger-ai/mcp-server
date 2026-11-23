@@ -2,9 +2,9 @@ import { createRequire } from 'node:module';
 import { dirname } from 'node:path';
 
 /**
- * Which zod this package and the MCP SDK each resolve.
+ * Which zod this package and the MCP library each resolve.
  *
- * They have to agree on the VERSION. The SDK renders our tool schemas with the
+ * They have to agree on the VERSION. The MCP library renders our tool schemas with the
  * zod it resolves, and a renderer from a different zod release does not
  * understand the schema internals this one produces: a 4.4.3 schema rendered by
  * 3.25.76 comes out as `{}`, losing every argument description and the `type`
@@ -18,15 +18,15 @@ import { dirname } from 'node:path';
  * with both on 4.4.3 the published contract is complete. Warning on that tree
  * would be a false alarm on a working install.
  *
- * Matching the SDK's `^3.25 || ^4.0` range and importing `zod/v4` is what lets
- * npm dedupe to one copy. This catches the trees where it cannot: a host pinned
- * below 3.25, `--legacy-peer-deps`, a pnpm or yarn resolution.
+ * Declaring the same `^4.2.0` range `@modelcontextprotocol/server` declares is what
+ * lets npm dedupe to one copy. This catches the trees where it cannot: a host
+ * pinned to another zod 4 release, `--legacy-peer-deps`, a pnpm or yarn resolution.
  */
 export interface ZodResolution {
   /** Version of the zod this package uses. */
   ours: string;
-  /** Version of the zod the MCP SDK uses. */
-  sdk: string;
+  /** Version of the zod `@modelcontextprotocol/server` uses. */
+  mcp: string;
   /** True when the two are different releases, whether or not they are separate copies. */
   skewed: boolean;
 }
@@ -40,10 +40,12 @@ export function resolveZodCopies(fromUrl: string = import.meta.url): ZodResoluti
   try {
     const require = createRequire(fromUrl);
     const ours = require('zod/package.json') as { version: string };
-    const sdkDir = dirname(require.resolve('@modelcontextprotocol/sdk/package.json'));
-    const sdkRequire = createRequire(`${sdkDir}/`);
-    const sdk = sdkRequire('zod/package.json') as { version: string };
-    return { ours: ours.version, sdk: sdk.version, skewed: ours.version !== sdk.version };
+    // `package.json` is not in the library's `exports` map, so locate it from
+    // the resolved entry point instead of requiring it.
+    const mcpDir = dirname(require.resolve('@modelcontextprotocol/server'));
+    const mcpRequire = createRequire(`${mcpDir}/`);
+    const mcp = mcpRequire('zod/package.json') as { version: string };
+    return { ours: ours.version, mcp: mcp.version, skewed: ours.version !== mcp.version };
   } catch {
     return null;
   }
@@ -53,14 +55,14 @@ export function resolveZodCopies(fromUrl: string = import.meta.url): ZodResoluti
 export function zodSplitWarning(resolution: ZodResolution): string {
   return (
     'Warning: this host tree resolved two different versions of zod.\n' +
-    `  @agledger/mcp-server:      zod ${resolution.ours}\n` +
-    `  @modelcontextprotocol/sdk: zod ${resolution.sdk}\n` +
-    "The SDK renders this server's tool schemas with its own copy, and a renderer from a " +
+    `  @agledger/mcp-server:         zod ${resolution.ours}\n` +
+    `  @modelcontextprotocol/server: zod ${resolution.mcp}\n` +
+    "The MCP library renders this server's tool schemas with its own copy, and a renderer from a " +
     'different zod release cannot read these schemas: every argument description and the ' +
     'type of every JSON-string argument are dropped from the published contract. The server ' +
     'still answers calls; agents receive it with the guidance removed.\n' +
-    'Fix: dedupe zod to one version (`npm dedupe`, or raise a zod pinned below 3.25 above ' +
-    'this package). This package accepts the same range the SDK does so a single copy can ' +
+    'Fix: dedupe zod to one version (`npm dedupe`, or align a pinned zod with ^4.2.0). ' +
+    'This package declares the same range the MCP library does so a single copy can ' +
     'serve both.\n'
   );
 }

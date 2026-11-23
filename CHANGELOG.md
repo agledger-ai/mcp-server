@@ -21,6 +21,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - Tool and resource descriptions describe the export a caller holds rather than the Server's storage.
 - **`agledger_verify` fails an export cut from the end.** The export is held to the two entry counts it states: fewer entries than `exportMetadata.expectedEntries`, the position of the record's latest checkpoint, is `CHECKPOINT_ROW_MISSING`, and fewer than `exportMetadata.totalEntries` is `CHAIN_POSITION_GAP`. The summary has an `Entry count` line saying which count the chain was held to, and `result.entryCount` carries both. An export that verified on 3.1.0 with its tail removed now fails.
 - The `agledger_api` description says what a 409 `IDEMPOTENCY_KEY_IN_FLIGHT`, a 409 `IDEMPOTENT_WRITE_COMMITTED` and a 503 `SERVER_SHUTTING_DOWN` ask of the caller.
+- **Built on `@modelcontextprotocol/server` 2.x** in place of `@modelcontextprotocol/sdk` 1.x. The runtime dependency tree drops from 97 packages to 5 (the server, its core, `zod`, `@agledger/verify-core` and `cborg`); the HTTP framework, auth and schema-validator packages the 1.x SDK pulled in are no longer installed. The tool names, descriptions, arguments (and which are required) and results are unchanged. `tools/list` now reports each input schema as JSON Schema 2020-12 (`$schema` is `https://json-schema.org/draft/2020-12/schema`, was draft-07), and no longer sends the default `execution.taskSupport: "forbidden"` on each tool.
+- **`zod` 4 is required.** The `zod` dependency is `^4.2.0`, the range `@modelcontextprotocol/server` declares, so a host installs one copy; the `zod` peer dependency is gone. An embedding host that held zod 3 gets zod 4 alongside it.
 
 ## [3.1.0] - 2026-11-05
 

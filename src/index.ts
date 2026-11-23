@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { accessSync, constants as fsConstants } from 'node:fs';
 import { parseArgs } from 'node:util';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { StdioServerTransport } from '@modelcontextprotocol/server/stdio';
 import { AgledgerMcpServer, SERVER_VERSION } from './server.js';
 import { resolveZodCopies, zodSplitWarning } from './zod-integrity.js';
 import { OIDC_ENV, oidcTokenFromCommand, oidcTokenFromFile, type OidcCertCredentialOptions } from './credentials.js';

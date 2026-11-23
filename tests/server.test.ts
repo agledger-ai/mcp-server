@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { generateKeyPairSync, hash, sign, type KeyObject } from 'node:crypto';
 import { encode as cborEncode, rfc8949EncodeOptions } from 'cborg';
-import type { Tool, CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import type { Tool, CallToolResult } from '@modelcontextprotocol/server';
 import { createTestHarness, type TestHarness } from './harness.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
