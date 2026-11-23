@@ -57,7 +57,7 @@
   },
   "dependencies": {
     "@agledger/verify-core": "^2.2.0",
-    "@modelcontextprotocol/server": "2.4.0",
+    "@modelcontextprotocol/server": "^2.4.0",
     "zod": "^4.2.0"
   },
   "devDependencies": {
