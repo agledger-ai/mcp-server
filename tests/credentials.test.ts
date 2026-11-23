@@ -1,11 +1,12 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { createHash, createPublicKey, verify } from 'node:crypto';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ApiClient } from '../src/api-client.js';
 import {
+  AgentKeysFileError,
   OidcCertCredential,
   OidcExchangeError,
   OidcTokenSourceError,
@@ -123,6 +124,41 @@ describe('OIDC cert exchange', () => {
     expect(
       verify(null, Buffer.from('agledger.oidc.cert.v1\nagent-sub', 'utf8'), pub, Buffer.from(body.proofOfPossession, 'base64')),
     ).toBe(true);
+  });
+
+  it('records its public key in the agent keys file before the cert is used, once', async () => {
+    const server = fakeServer({ ttlMs: 1 });
+    const dir = mkdtempSync(join(tmpdir(), 'agent-keys-'));
+    const file = join(dir, 'keys.json');
+    try {
+      const credential = new OidcCertCredential({ getOidcToken: tokenSource().get, agentKeysFile: file });
+      const client = new ApiClient(API, credential);
+      await client.request('GET', '/v1/auth/me');
+      await client.request('GET', '/v1/auth/me');
+      expect(server.exchanges.length).toBeGreaterThan(1);
+      const doc = JSON.parse(readFileSync(file, 'utf8')) as { keys: Array<{ publicKeyJwk: unknown; certId: string }> };
+      // One key per process, however many exchanges.
+      expect(doc.keys).toHaveLength(1);
+      expect(doc.keys[0]).toMatchObject({ publicKeyJwk: credential.publicKeyJwk, certId: 'c1' });
+      expect(exchangeBody(server.exchanges[0]!).publicKeyJwk).toEqual(credential.publicKeyJwk);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses an agent keys file that is not a JWK Set, before anything is signed', async () => {
+    const server = fakeServer({});
+    const dir = mkdtempSync(join(tmpdir(), 'agent-keys-'));
+    const file = join(dir, 'keys.json');
+    writeFileSync(file, '[]');
+    try {
+      const client = new ApiClient(API, new OidcCertCredential({ getOidcToken: tokenSource().get, agentKeysFile: file }));
+      await expect(client.request('POST', '/v1/records', { body: { a: 1 } })).rejects.toBeInstanceOf(AgentKeysFileError);
+      expect(server.calls.filter((c) => c.url.endsWith('/v1/records'))).toHaveLength(0);
+      expect(readFileSync(file, 'utf8')).toBe('[]');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('sends agentId only when one is configured', async () => {

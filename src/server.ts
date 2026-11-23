@@ -24,6 +24,7 @@ import {
 } from '@agledger/verify-core';
 import { ApiClient, QueryShapeError, type ApiResponse } from './api-client.js';
 import {
+  AgentKeysFileError,
   OidcCertCredential,
   OidcExchangeError,
   OidcTokenSourceError,
@@ -165,6 +166,27 @@ function apiFailureText(path: string, response: ApiResponse): string {
  * The exchange's refusal is carried as the Server sent it, scrubbed of any
  * token, and its recoveryHint is passed through rather than rewritten.
  */
+/**
+ * The agent keys argument in every shape the agledger-verify and agledger
+ * verify `--agent-keys` file takes: one JWK, a list of them, or a
+ * `{keys:[...]}` JWK Set (the file AGLEDGER_AGENT_KEYS_FILE collects), where an
+ * entry may wrap its key as `{publicKeyJwk:{...}}`. verify-core validates each
+ * key and refuses a bad one with a TypeError.
+ */
+function agentKeyList(value: unknown): AgentPublicKeyJwk[] {
+  const list =
+    Array.isArray(value)
+      ? value
+      : value !== null && typeof value === 'object' && Array.isArray((value as { keys?: unknown }).keys)
+        ? (value as { keys: unknown[] }).keys
+        : [value];
+  return list.map((entry) =>
+    entry !== null && typeof entry === 'object' && 'publicKeyJwk' in entry
+      ? (entry as { publicKeyJwk: AgentPublicKeyJwk }).publicKeyJwk
+      : (entry as AgentPublicKeyJwk),
+  );
+}
+
 function credentialErrorResult(err: unknown): CallToolResult | undefined {
   if (err instanceof OidcExchangeError) {
     return errorResult(
@@ -180,6 +202,13 @@ function credentialErrorResult(err: unknown): CallToolResult | undefined {
       err.message,
       err.code,
       'Fix the delegation source the server was started with (AGLEDGER_ON_BEHALF_OF_CMD or AGLEDGER_ON_BEHALF_OF_FILE); it must yield a current RFC 8693 token-exchange result token.',
+    );
+  }
+  if (err instanceof AgentKeysFileError) {
+    return errorResult(
+      err.message,
+      err.code,
+      `Fix or move ${err.path} (named by AGLEDGER_AGENT_KEYS_FILE), or unset it and restart the server. Nothing was signed under the new cert.`,
     );
   }
   if (err instanceof OidcTokenSourceError) {
@@ -590,8 +619,10 @@ const VERIFY_ARGS = {
   agentKeys: jsonStringField
     .optional()
     .describe(
-      'Optional Ed25519 public keys of agent certs, as a JSON-encoded array of JWKs ' +
-        '\'[{"kty":"OKP","crv":"Ed25519","x":"..."}]\' (the publicKeyJwk each agent sent at cert exchange, also the cnf.jwk claim in its certJws). ' +
+      'Optional Ed25519 public keys of agent certs, JSON-encoded: an array of JWKs ' +
+        '\'[{"kty":"OKP","crv":"Ed25519","x":"..."}]\', one JWK, or a {"keys":[...]} JWK Set (the file AGLEDGER_AGENT_KEYS_FILE collects), ' +
+        'where an entry may wrap its key as {"publicKeyJwk":{...}}. Each is the publicKeyJwk an agent sent at cert exchange (also the cnf.jwk ' +
+        'claim in its certJws; agledger_discover shows this server\'s own as agentKey). ' +
         'An entry whose sealed agent signature names one of these keys by thumbprint has that ' +
         'signature re-verified offline, and fails CHAIN_AGENT_SIGNATURE_INVALID if it does not verify. ' +
         'Without it, agent signatures are counted in result.agentSignatures but not checked.',
@@ -653,6 +684,9 @@ const VERIFY_ARGS = {
 export class AgledgerMcpServer {
   readonly mcp: McpServer;
   readonly client: ApiClient;
+  /** The cert credential, when the server authenticates with an OIDC token source. */
+  private readonly oidcCredential: OidcCertCredential | undefined;
+  private readonly agentKeysFile: string | undefined;
 
   constructor(options: AgledgerMcpServerOptions) {
     // No placeholder default. agledger.example.com resolves nowhere, so a
@@ -667,11 +701,9 @@ export class AgledgerMcpServer {
       );
     }
 
-    const credential = options.apiKey
-      ? options.apiKey
-      : options.oidc
-        ? new OidcCertCredential(options.oidc)
-        : undefined;
+    this.oidcCredential = !options.apiKey && options.oidc ? new OidcCertCredential(options.oidc) : undefined;
+    this.agentKeysFile = options.oidc?.agentKeysFile;
+    const credential = options.apiKey ? options.apiKey : this.oidcCredential;
     if (Boolean(options.apiKey) === Boolean(options.oidc) || !credential) {
       throw new Error(
         'Configure exactly one credential: an API key (--api-key or AGLEDGER_API_KEY) or an OIDC token source ' +
@@ -751,6 +783,17 @@ export class AgledgerMcpServer {
             result.identity = section(identity);
           }
           result.scopeProfiles = section(scopeProfiles);
+
+          // The cert key this server signs request bodies with. The cert
+          // carries only its thumbprint, so this is the key agledger_verify's
+          // agentKeys needs to re-verify what this server signed.
+          if (this.oidcCredential) {
+            result.agentKey = {
+              publicKeyJwk: this.oidcCredential.publicKeyJwk,
+              ...(this.agentKeysFile ? { recordedIn: this.agentKeysFile } : {}),
+              note: 'Pass this key in agledger_verify agentKeys to re-verify the agent signatures this server sealed. One key per server process.',
+            };
+          }
 
           // Whether POSTs carry an AGLedger-On-Behalf-Of delegation, and from
           // where. The token itself is never shown.
@@ -1064,14 +1107,7 @@ export class AgledgerMcpServer {
           if (agentKeysRaw !== undefined && agentKeysRaw !== '') {
             const decodedAgentKeys = parseJsonObject(agentKeysRaw, 'agentKeys', { allowArray: true });
             if (!decodedAgentKeys.ok) return decodedAgentKeys.error;
-            if (!Array.isArray(decodedAgentKeys.value)) {
-              return errorResult(
-                'Argument `agentKeys` must decode to a JSON array of Ed25519 JWKs.',
-                'INVALID_JSON',
-                'Pass `agentKeys` as \'[{"kty":"OKP","crv":"Ed25519","x":"..."}]\'.',
-              );
-            }
-            agentKeys = decodedAgentKeys.value as AgentPublicKeyJwk[];
+            agentKeys = agentKeyList(decodedAgentKeys.value);
           }
 
           let federationKeys: Record<string, string> | FederationKeyEntry[] | undefined;

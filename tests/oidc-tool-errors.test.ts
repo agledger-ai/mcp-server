@@ -55,6 +55,10 @@ describe('OIDC credential errors reach the tool result', () => {
       expect(d.health).toEqual({});
       expect(d.identity.code).toBe('OIDC_EXCHANGE_FAILED');
       expect(JSON.stringify(discover)).not.toContain(token);
+      // The cert key this server signs with, for agledger_verify's agentKeys.
+      const agentKey = (discover.structuredContent as { agentKey: { publicKeyJwk: Record<string, string> } }).agentKey;
+      expect(agentKey.publicKeyJwk).toMatchObject({ kty: 'OKP', crv: 'Ed25519' });
+      expect(agentKey.publicKeyJwk.x).toMatch(/^[A-Za-z0-9_-]{43}$/);
     } finally {
       await close();
     }

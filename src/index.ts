@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { accessSync, constants as fsConstants } from 'node:fs';
+import { resolve as resolvePath } from 'node:path';
 import { parseArgs } from 'node:util';
 import { StdioServerTransport } from '@modelcontextprotocol/server/stdio';
 import { AgledgerMcpServer, SERVER_VERSION } from './server.js';
@@ -144,6 +145,12 @@ request bodies. Nothing is written to disk.
                              Bind an agent with PATCH /v1/agents/{id}
                              (oidcIss, oidcSub) or claimMapping.agent_id
                              on the trusted issuer.
+  AGLEDGER_AGENT_KEYS_FILE   Optional. A JWK Set file the server's cert public
+                             key is added to on each exchange, before the cert
+                             is used, so its agent signatures can be
+                             re-verified offline (agledger_verify agentKeys,
+                             or --agent-keys on a verifier). Public keys only.
+                             agledger_discover also shows the key.
 
 Delegation (optional): when the agent acts for a person or another party, an
 RFC 8693 token-exchange result token is sent as AGLedger-On-Behalf-Of on every
@@ -170,6 +177,8 @@ Exit codes: 0 clean, 1 runtime failure, 2 usage or configuration error.
   const tokenCmd = process.env[OIDC_ENV.TOKEN_CMD] || undefined;
   const tokenFile = process.env[OIDC_ENV.TOKEN_FILE] || undefined;
   const agentId = process.env[OIDC_ENV.AGENT_ID] || undefined;
+  const agentKeysPath = process.env[OIDC_ENV.AGENT_KEYS_FILE];
+  const agentKeysFile = agentKeysPath ? resolvePath(agentKeysPath) : undefined;
 
   if (!apiKey && !tokenCmd && !tokenFile) {
     process.stderr.write(
@@ -216,6 +225,7 @@ Exit codes: 0 clean, 1 runtime failure, 2 usage or configuration error.
     oidc = source && {
       ...source,
       ...(agentId ? { agentId } : {}),
+      ...(agentKeysFile ? { agentKeysFile } : {}),
       onWarning: (message) => process.stderr.write(`Warning: ${message}\n`),
     };
   }

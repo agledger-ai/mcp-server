@@ -1,3 +1,4 @@
+import { generateKeyPairSync } from 'node:crypto';
 import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import type { CallToolResult } from '@modelcontextprotocol/server';
@@ -138,15 +139,25 @@ describe('agledger_verify agentKeys', () => {
     await harness.cleanup();
   });
 
-  it('refuses agentKeys that are not an array', async () => {
+  it('takes a single agentKeys JWK as the CLIs do, and verify-core refuses a malformed one', async () => {
     const result = (await harness.client.callTool({
       name: 'agledger_verify',
       arguments: { export: '{"exportFormatVersion":"2.0","entries":[]}', agentKeys: '{"kty":"OKP"}' },
     })) as CallToolResult;
     expect(result.isError).toBe(true);
-    const sc = result.structuredContent as Record<string, unknown>;
-    expect(sc.code).toBe('INVALID_JSON');
-    expect(String(sc.message)).toContain('agentKeys');
+    expect((result.structuredContent as Record<string, unknown>).code).toBe('INVALID_ARGUMENT');
+  });
+
+  it('takes agentKeys as the {keys:[{publicKeyJwk}]} JWK Set AGLEDGER_AGENT_KEYS_FILE collects', async () => {
+    const jwk = generateKeyPairSync('ed25519').publicKey.export({ format: 'jwk' });
+    const set = JSON.stringify({ keys: [{ publicKeyJwk: { kty: 'OKP', crv: 'Ed25519', x: jwk.x }, certId: 'c1' }] });
+    for (const agentKeys of [set, JSON.stringify({ kty: 'OKP', crv: 'Ed25519', x: jwk.x })]) {
+      const result = (await harness.client.callTool({
+        name: 'agledger_verify',
+        arguments: { export: '{"exportMetadata":{"recordId":"r","exportFormatVersion":"2.0","canonicalization":"RFC8949-CDE"},"entries":[]}', agentKeys },
+      })) as CallToolResult;
+      expect((result.structuredContent as Record<string, unknown>).code).toBeUndefined();
+    }
   });
 
   it('passes agentKeys to verify-core, which rejects a key that is not an Ed25519 JWK', async () => {
