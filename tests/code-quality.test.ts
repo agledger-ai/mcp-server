@@ -1,9 +1,5 @@
 /**
- * Source hygiene checks over this package's own code.
- *
- * Repo-scoped copy (mcp-server is its own source-of-truth repo). Mirrors the
- * checks the AGLedger monorepo enforced, narrowed to this package's `src`.
- * Run with `npm test`.
+ * Source hygiene checks over this package's own code. Run with `npm test`.
  */
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
