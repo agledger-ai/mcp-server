@@ -40,7 +40,7 @@ const REDACTED = '<redacted-token>';
 
 /** Replace anything shaped like a JWT with a placeholder. */
 export function redactTokens(text: string): string {
-  return text.replace(JWT_PATTERN, REDACTED);
+  return text.replaceAll(JWT_PATTERN, REDACTED);
 }
 
 /**
@@ -187,7 +187,7 @@ export function oidcTokenFromCommand(
         reject(new OidcTokenSourceError(`${origin}: ${message}`));
       };
       const timer = setTimeout(() => fail(`the token command did not finish within ${timeoutMs / 1000}s and was killed.`), timeoutMs);
-      child.stdout!.on('data', (d: Buffer) => {
+      child.stdout?.on('data', (d: Buffer) => {
         outBytes += d.length;
         if (outBytes > maxStdout) {
           fail(`the token command printed more than ${maxStdout} bytes, which is not a token; it was killed.`);
@@ -195,7 +195,7 @@ export function oidcTokenFromCommand(
         }
         out.push(d);
       });
-      child.stderr!.setEncoding('utf8').on('data', (d: string) => {
+      child.stderr?.setEncoding('utf8').on('data', (d: string) => {
         if (stderr.length < STDERR_LIMIT * 2) stderr += d;
       });
       child.on('error', (err) => fail(`could not run the token command: ${err.message}`));
@@ -233,7 +233,7 @@ export function jwtPayloadOf(token: string, origin: string): Record<string, unkn
   }
   let payload: unknown;
   try {
-    payload = JSON.parse(Buffer.from(parts[1]!, 'base64url').toString('utf8'));
+    payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
   } catch {
     throw new OidcTokenSourceError(`${origin}: the token's payload segment is not base64url JSON.`);
   }

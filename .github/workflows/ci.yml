@@ -45,6 +45,9 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Lint
+        run: npm run lint
+
       # Build BEFORE test: tests/cli-entrypoint.test.ts spawns the built
       # dist/index.js, because the exit-code contract it guards lives in
       # process wiring that no importable unit test can observe.

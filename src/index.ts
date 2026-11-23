@@ -185,9 +185,14 @@ Exit codes: 0 clean, 1 runtime failure, 2 usage or configuration error.
         process.exit(EXIT_USAGE_ERROR);
       }
     }
-    oidc = {
-      getOidcToken: tokenCmd ? oidcTokenFromCommand(tokenCmd) : oidcTokenFromFile(tokenFile!),
-      origin: tokenCmd ? OIDC_ENV.TOKEN_CMD : OIDC_ENV.TOKEN_FILE,
+    // The checks above leave one of the two set; the command wins.
+    const source = tokenCmd
+      ? { getOidcToken: oidcTokenFromCommand(tokenCmd), origin: OIDC_ENV.TOKEN_CMD }
+      : tokenFile
+        ? { getOidcToken: oidcTokenFromFile(tokenFile), origin: OIDC_ENV.TOKEN_FILE }
+        : undefined;
+    oidc = source && {
+      ...source,
       ...(agentId ? { agentId } : {}),
       onWarning: (message) => process.stderr.write(`Warning: ${message}\n`),
     };

@@ -27,8 +27,8 @@ describe('OIDC credential errors reach the tool result', () => {
       vi.fn(async (url: string, init: RequestInit) => {
         if (url.endsWith('/v1/auth/oidc/cert')) {
           const sent = JSON.parse(String(init.body)).oidcToken as string;
-          return new Response(
-            JSON.stringify({ detail: `Untrusted issuer for ${sent}`, recoveryHint: 'Register the issuer first.' }),
+          return Response.json(
+            { detail: `Untrusted issuer for ${sent}`, recoveryHint: 'Register the issuer first.' },
             { status: 401, headers: { 'content-type': 'application/json' } },
           );
         }
@@ -70,8 +70,8 @@ describe('OIDC credential errors reach the tool result', () => {
       vi.fn(async (url: string, init: RequestInit) => {
         if (url.endsWith('/v1/auth/oidc/cert')) {
           sentAgentId = (JSON.parse(String(init.body)) as { agentId?: unknown }).agentId;
-          return new Response(
-            JSON.stringify({
+          return Response.json(
+            {
               type: '/problems/forbidden',
               title: 'Forbidden',
               status: 403,
@@ -79,7 +79,7 @@ describe('OIDC credential errors reach the tool result', () => {
               error: 'CERT_AGENT_BINDING_MISMATCH',
               recoveryHint,
               retryable: false,
-            }),
+            },
             { status: 403, headers: { 'content-type': 'application/json' } },
           );
         }

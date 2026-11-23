@@ -602,13 +602,17 @@ export class AgledgerMcpServer {
       );
     }
 
-    if (Boolean(options.apiKey) === Boolean(options.oidc)) {
+    const credential = options.apiKey
+      ? options.apiKey
+      : options.oidc
+        ? new OidcCertCredential(options.oidc)
+        : undefined;
+    if (Boolean(options.apiKey) === Boolean(options.oidc) || !credential) {
       throw new Error(
         'Configure exactly one credential: an API key (--api-key or AGLEDGER_API_KEY) or an OIDC token source ' +
           '(AGLEDGER_OIDC_TOKEN_CMD or AGLEDGER_OIDC_TOKEN_FILE).',
       );
     }
-    const credential = options.apiKey ? options.apiKey : new OidcCertCredential(options.oidc!);
 
     this.client = new ApiClient(
       apiUrl,
@@ -809,7 +813,7 @@ export class AgledgerMcpServer {
           // Reject control characters before building the request URL. Tool input
           // is untrusted; control chars enable request-line / header injection and
           // never appear in a legitimate API path.
-          if (/[\x00-\x1f\x7f]/.test(path)) {
+          if (Array.from(path).some((ch) => ch.charCodeAt(0) <= 0x1f || ch.charCodeAt(0) === 0x7f)) {
             return errorResult(
               'Path contains control characters.',
               'PATH_INVALID',
@@ -1097,12 +1101,12 @@ export class AgledgerMcpServer {
         }
         // /llms.txt is text/plain, so the client surfaces the raw body rather
         // than a parsed object.
-        const body = response.body as unknown;
+        const body = response.body;
         const text =
           typeof body === 'string'
             ? body
             : body && typeof body === 'object' && '_raw' in body
-              ? String((body as { _raw: unknown })._raw)
+              ? String(body._raw)
               : JSON.stringify(body);
         return {
           contents: [

@@ -8,7 +8,7 @@ afterEach(() => {
 describe('ApiClient', () => {
   it('sends authorization header', async () => {
     const mockFetch = vi.fn().mockResolvedValueOnce(
-      new Response(JSON.stringify({ ok: true }), {
+      Response.json({ ok: true }, {
         status: 200,
         headers: { 'content-type': 'application/json' },
       }),
@@ -25,7 +25,7 @@ describe('ApiClient', () => {
 
   it('appends query params for GET', async () => {
     const mockFetch = vi.fn().mockResolvedValueOnce(
-      new Response(JSON.stringify({}), {
+      Response.json({}, {
         status: 200,
         headers: { 'content-type': 'application/json' },
       }),
@@ -42,7 +42,7 @@ describe('ApiClient', () => {
 
   it('skips undefined query params', async () => {
     const mockFetch = vi.fn().mockResolvedValueOnce(
-      new Response(JSON.stringify({}), {
+      Response.json({}, {
         status: 200,
         headers: { 'content-type': 'application/json' },
       }),
@@ -58,7 +58,7 @@ describe('ApiClient', () => {
 
   it('sends JSON body for POST', async () => {
     const mockFetch = vi.fn().mockResolvedValueOnce(
-      new Response(JSON.stringify({ id: '1' }), {
+      Response.json({ id: '1' }, {
         status: 201,
         headers: { 'content-type': 'application/json' },
       }),
@@ -95,7 +95,7 @@ describe('ApiClient', () => {
 
   it('strips trailing slash from base URL', async () => {
     const mockFetch = vi.fn().mockResolvedValueOnce(
-      new Response(JSON.stringify({}), {
+      Response.json({}, {
         status: 200,
         headers: { 'content-type': 'application/json' },
       }),
@@ -113,7 +113,7 @@ describe('ApiClient', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValueOnce(
-        new Response(JSON.stringify({ id: '1' }), {
+        Response.json({ id: '1' }, {
           status: 201,
           headers: { 'content-type': 'application/json' },
         }),
@@ -153,7 +153,7 @@ describe('ApiClient', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValueOnce(
-        new Response(JSON.stringify({ detail: 'Not found' }), {
+        Response.json({ detail: 'Not found' }, {
           status: 404,
           headers: { 'content-type': 'application/json' },
         }),
@@ -171,7 +171,7 @@ describe('ApiClient', () => {
 describe('ApiClient query serialization', () => {
   function stubOk() {
     const mockFetch = vi.fn().mockResolvedValueOnce(
-      new Response(JSON.stringify({}), {
+      Response.json({}, {
         status: 200,
         headers: { 'content-type': 'application/json' },
       }),

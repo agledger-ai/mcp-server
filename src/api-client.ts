@@ -29,6 +29,13 @@ function stripTrailingSlashes(s: string): string {
  * A Date becomes ISO-8601 rather than the JS locale form, which the date-time
  * query params reject.
  */
+/** String form of a query value: a Date as ISO-8601, anything else as `String()` renders it. */
+function queryScalar(value: unknown): string {
+  if (value instanceof Date) return value.toISOString();
+  // Callers pass scalars; an object here keeps the `String()` form it has always had.
+  return String(value);
+}
+
 function appendQueryParam(search: URLSearchParams, key: string, value: unknown): void {
   if (value instanceof Date) {
     search.set(key, value.toISOString());
@@ -44,14 +51,11 @@ function appendQueryParam(search: URLSearchParams, key: string, value: unknown):
   if (typeof value === 'object') {
     for (const [sub, subValue] of Object.entries(value as Record<string, unknown>)) {
       if (subValue === undefined || subValue === null) continue;
-      search.set(
-        `${key}[${sub}]`,
-        subValue instanceof Date ? subValue.toISOString() : String(subValue),
-      );
+      search.set(`${key}[${sub}]`, queryScalar(subValue));
     }
     return;
   }
-  search.set(key, String(value));
+  search.set(key, queryScalar(value));
 }
 
 export interface RequestOptions {
@@ -148,8 +152,9 @@ export class ApiClient {
     }
 
     // Every route that declares AGLedger-On-Behalf-Of is a POST.
+    const delegation = this.delegation;
     let onBehalfOf =
-      this.delegation && method.toUpperCase() === 'POST' ? await this.delegation.token() : undefined;
+      delegation && method.toUpperCase() === 'POST' ? await delegation.token() : undefined;
     const withDelegation = (h: Record<string, string>) =>
       onBehalfOf ? { ...h, [ON_BEHALF_OF_HEADER]: onBehalfOf } : h;
 
@@ -162,9 +167,9 @@ export class ApiClient {
     // delegation token is re-read only when the Server names it; otherwise a
     // cert can be revoked or expire server-side before our clock says so, and
     // gets exactly one re-exchange. A second 401 is the answer.
-    if (onBehalfOf && namesDelegation(first.body)) {
+    if (delegation && onBehalfOf && namesDelegation(first.body)) {
       const refused = onBehalfOf;
-      onBehalfOf = await this.delegation!.token(refused);
+      onBehalfOf = await delegation.token(refused);
       if (onBehalfOf === refused) return this.scrubbed(first, refused);
     } else if (this.credential.renewable) {
       bearer = await this.credential.bearer({ ...ctx, rejected: bearer });

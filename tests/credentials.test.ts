@@ -27,7 +27,7 @@ function jwt(sub: string, n = 0): string {
 }
 
 function json(status: number, body: unknown): Response {
-  return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+  return Response.json(body, { status, headers: { 'content-type': 'application/json' } });
 }
 
 interface Call {

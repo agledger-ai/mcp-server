@@ -1,13 +1,12 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { generateKeyPairSync, hash, sign, type KeyObject } from 'node:crypto';
 import { encode as cborEncode, rfc8949EncodeOptions } from 'cborg';
 import type { Tool, CallToolResult } from '@modelcontextprotocol/server';
 import { createTestHarness, type TestHarness } from './harness.js';
 
-const HERE = dirname(fileURLToPath(import.meta.url));
+const HERE = import.meta.dirname;
 
 // In-test COSE_Sign1 envelope builder (format 2.0). Mirrors the engine
 // encoder's Sig_structure construction (RFC 9052 §4.4) deterministically.
@@ -198,7 +197,7 @@ describe('resource registration', () => {
   it('reads the openapi resource by proxying to GET /openapi.json', async () => {
     const spec = { openapi: '3.0.3', info: { title: 'AGLedger API' }, paths: {} };
     const mockFetch = vi.fn().mockResolvedValueOnce(
-      new Response(JSON.stringify(spec), {
+      Response.json(spec, {
         status: 200,
         headers: { 'content-type': 'application/json' },
       }),
@@ -274,13 +273,13 @@ describe('agledger_discover', () => {
     const mockFetch = vi
       .fn()
       .mockResolvedValueOnce(
-        new Response(JSON.stringify({ status: 'ok', version: '1.0.0' }), {
+        Response.json({ status: 'ok', version: '1.0.0' }, {
           status: 200,
           headers: { 'content-type': 'application/json' },
         }),
       )
       .mockResolvedValueOnce(
-        new Response(JSON.stringify({ agentId: 'agent-1', scopes: ['records:read'] }), {
+        Response.json({ agentId: 'agent-1', scopes: ['records:read'] }, {
           status: 200,
           headers: { 'content-type': 'application/json' },
         }),
@@ -326,7 +325,7 @@ describe('agledger_discover', () => {
     const mockFetch = vi
       .fn()
       .mockResolvedValueOnce(
-        new Response(JSON.stringify({ status: 'ok' }), {
+        Response.json({ status: 'ok' }, {
           status: 200,
           headers: { 'content-type': 'application/json' },
         }),
@@ -352,7 +351,7 @@ describe('agledger_api', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValueOnce(
-        new Response(JSON.stringify(apiResponse), {
+        Response.json(apiResponse, {
           status: 200,
           headers: { 'content-type': 'application/json' },
         }),
@@ -372,7 +371,7 @@ describe('agledger_api', () => {
   it('passes through POST body', async () => {
     const apiResponse = { id: 'r-2', status: 'CREATED' };
     const mockFetch = vi.fn().mockResolvedValueOnce(
-      new Response(JSON.stringify(apiResponse), {
+      Response.json(apiResponse, {
         status: 201,
         headers: { 'content-type': 'application/json' },
       }),
@@ -407,7 +406,7 @@ describe('agledger_api', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValueOnce(
-        new Response(JSON.stringify(errorBody), {
+        Response.json(errorBody, {
           status: 404,
           headers: { 'content-type': 'application/json' },
         }),
@@ -436,7 +435,7 @@ describe('agledger_api', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValueOnce(
-        new Response(JSON.stringify(errorBody), {
+        Response.json(errorBody, {
           status: 403,
           headers: { 'content-type': 'application/json' },
         }),
@@ -508,7 +507,7 @@ describe('agledger_api', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValueOnce(
-        new Response(JSON.stringify(errorBody), {
+        Response.json(errorBody, {
           status: 400,
           headers: { 'content-type': 'application/json' },
         }),
@@ -535,7 +534,7 @@ describe('agledger_api', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValueOnce(
-        new Response(JSON.stringify(errorBody), {
+        Response.json(errorBody, {
           status: 404,
           headers: { 'content-type': 'application/json' },
         }),
@@ -684,7 +683,7 @@ describe('agledger_api', () => {
 
   it('sends the numeric bounds and producedBy filters in bracket form', async () => {
     const mockFetch = vi.fn().mockResolvedValueOnce(
-      new Response(JSON.stringify({ data: [] }), { status: 200, headers: { 'content-type': 'application/json' } }),
+      Response.json({ data: [] }, { status: 200, headers: { 'content-type': 'application/json' } }),
     );
     vi.stubGlobal('fetch', mockFetch);
 
@@ -712,7 +711,7 @@ describe('agledger_api', () => {
 
   it('sends query params for GET requests', async () => {
     const mockFetch = vi.fn().mockResolvedValueOnce(
-      new Response(JSON.stringify({ data: [] }), {
+      Response.json({ data: [] }, {
         status: 200,
         headers: { 'content-type': 'application/json' },
       }),
@@ -1116,13 +1115,13 @@ describe('content[] mirror: every tool path returns non-empty content[]', () => 
     const mockFetch = vi
       .fn()
       .mockResolvedValueOnce(
-        new Response(JSON.stringify({ status: 'ok' }), {
+        Response.json({ status: 'ok' }, {
           status: 200,
           headers: { 'content-type': 'application/json' },
         }),
       )
       .mockResolvedValueOnce(
-        new Response(JSON.stringify({ agentId: 'a' }), {
+        Response.json({ agentId: 'a' }, {
           status: 200,
           headers: { 'content-type': 'application/json' },
         }),
@@ -1140,7 +1139,7 @@ describe('content[] mirror: every tool path returns non-empty content[]', () => 
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValueOnce(
-        new Response(JSON.stringify({ data: [], nextSteps: [] }), {
+        Response.json({ data: [], nextSteps: [] }, {
           status: 200,
           headers: { 'content-type': 'application/json' },
         }),
@@ -1165,7 +1164,7 @@ describe('content[] mirror: every tool path returns non-empty content[]', () => 
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValueOnce(
-        new Response(JSON.stringify(errorBody), {
+        Response.json(errorBody, {
           status: 403,
           headers: { 'content-type': 'application/json' },
         }),
@@ -1222,7 +1221,7 @@ describe('Gemini-shape: free-form object fields accept stringified JSON', () => 
 
   it('agledger_api: accepts stringified-JSON params and forwards as POST body', async () => {
     const mockFetch = vi.fn().mockResolvedValueOnce(
-      new Response(JSON.stringify({ id: 'r-1' }), {
+      Response.json({ id: 'r-1' }, {
         status: 201,
         headers: { 'content-type': 'application/json' },
       }),
@@ -1248,7 +1247,7 @@ describe('Gemini-shape: free-form object fields accept stringified JSON', () => 
 
   it('agledger_api: accepts stringified-JSON params and forwards as GET query', async () => {
     const mockFetch = vi.fn().mockResolvedValueOnce(
-      new Response(JSON.stringify({ data: [] }), {
+      Response.json({ data: [] }, {
         status: 200,
         headers: { 'content-type': 'application/json' },
       }),
