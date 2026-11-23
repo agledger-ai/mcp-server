@@ -14,6 +14,7 @@
  */
 
 import { jwtPayloadOf, OidcTokenSourceError, redactTokens, type OidcTokenGetter } from './credentials.js';
+import { errorMessage } from './errors.js';
 
 export const ON_BEHALF_OF_ENV = {
   CMD: 'AGLEDGER_ON_BEHALF_OF_CMD',
@@ -99,7 +100,7 @@ export class DelegationSource {
       return token;
     } catch (err) {
       this.cached = undefined;
-      const message = redactTokens(err instanceof Error ? err.message : String(err));
+      const message = redactTokens(errorMessage(err));
       throw new DelegationSourceError(message.startsWith(this.origin) ? message : `${this.origin}: ${message}`);
     }
   }

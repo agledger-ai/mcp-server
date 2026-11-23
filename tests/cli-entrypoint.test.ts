@@ -11,7 +11,7 @@
  */
 import { describe, it, expect, beforeAll } from 'vitest';
 import { execFile, execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -54,8 +54,15 @@ describe('agledger-mcp exit codes', () => {
   beforeAll(() => {
     // Build on demand rather than depending on step order. These tests need
     // the compiled binary, so a `npm test` on a clean checkout would otherwise
-    // fail on a missing artifact rather than on anything about the code.
-    if (!existsSync(entrypoint)) {
+    // fail on a missing artifact rather than on anything about the code. A
+    // dist/ older than the sources is rebuilt too: testing a stale binary
+    // would pass or fail on code that is no longer there.
+    const newestSource = Math.max(
+      ...readdirSync(join(here, '..', 'src'), { recursive: true, withFileTypes: true })
+        .filter((e) => e.isFile())
+        .map((e) => statSync(join(e.parentPath, e.name)).mtimeMs),
+    );
+    if (!existsSync(entrypoint) || statSync(entrypoint).mtimeMs < newestSource) {
       execFileSync('npm', ['run', 'build'], { cwd: join(here, '..'), stdio: 'inherit' });
     }
   }, 120_000);
@@ -104,7 +111,7 @@ describe('agledger-mcp exit codes', () => {
     const r = await run([flag]);
     expect(r.code).toBe(0);
     expect(r.stdout).toMatch(/^agledger-mcp \d+\.\d+\.\d+\n$/);
-    expect((await run(['--help'])).stderr).toContain('--version, -V');
+    expect((await run(['--help'])).stdout).toContain('--version, -V');
   });
 
   it.each([
@@ -132,7 +139,7 @@ describe('agledger-mcp exit codes', () => {
     const base = ['--api-key', 'k', '--api-url', 'https://example.invalid'];
     expect((await run([...base, '--timeout', '2147483'])).code).toBe(0);
     expect((await run([...base, '--timeout', '2147484'])).code).toBe(2);
-    expect((await run(['--help'])).stderr).toMatch(/Default 30, at most 2147483\./);
+    expect((await run(['--help'])).stdout).toMatch(/Default 30, at most 2147483\./);
   });
 
   it('documents --api-url as required, not optional, in --help', async () => {
@@ -140,8 +147,8 @@ describe('agledger-mcp exit codes', () => {
     // The usage line carried `[--api-url <url>]` for a full release after the
     // flag became mandatory, so the shipped help told readers the opposite of
     // what the binary does.
-    expect(r.stderr).not.toMatch(/\[--api-url/);
-    expect(r.stderr).toMatch(/Usage: agledger-mcp --api-key <key> --api-url <url>/);
+    expect(r.stdout).not.toMatch(/\[--api-url/);
+    expect(r.stdout).toMatch(/Usage: agledger-mcp --api-key <key> --api-url <url>/);
   });
 
   it('starts and exits 0 on stdin EOF when both flags are supplied', async () => {
@@ -168,7 +175,7 @@ describe('agledger-mcp exit codes', () => {
   it('documents all three credential sources and the agent id in --help', async () => {
     const r = await run(['--help']);
     for (const name of ['AGLEDGER_API_KEY', 'AGLEDGER_OIDC_TOKEN_CMD', 'AGLEDGER_OIDC_TOKEN_FILE', 'AGLEDGER_OIDC_AGENT_ID']) {
-      expect(r.stderr).toContain(name);
+      expect(r.stdout).toContain(name);
     }
   });
 
@@ -220,7 +227,7 @@ describe('agledger-mcp exit codes', () => {
   it('documents the delegation sources in --help', async () => {
     const r = await run(['--help']);
     for (const name of ['AGLEDGER_ON_BEHALF_OF_CMD', 'AGLEDGER_ON_BEHALF_OF_FILE', 'AGLedger-On-Behalf-Of']) {
-      expect(r.stderr).toContain(name);
+      expect(r.stdout).toContain(name);
     }
   });
 

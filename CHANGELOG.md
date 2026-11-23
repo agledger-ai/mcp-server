@@ -23,10 +23,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - The `agledger_api` description says what a 409 `IDEMPOTENCY_KEY_IN_FLIGHT`, a 409 `IDEMPOTENT_WRITE_COMMITTED` and a 503 `SERVER_SHUTTING_DOWN` ask of the caller.
 - **Built on `@modelcontextprotocol/server` 2.x** in place of `@modelcontextprotocol/sdk` 1.x. The runtime dependency tree drops from 97 packages to 5 (the server, its core, `zod`, `@agledger/verify-core` and `cborg`); the HTTP framework, auth and schema-validator packages the 1.x SDK pulled in are no longer installed. The tool names, descriptions, arguments (and which are required) and results are unchanged. `tools/list` now reports each input schema as JSON Schema 2020-12 (`$schema` is `https://json-schema.org/draft/2020-12/schema`, was draft-07), and no longer sends the default `execution.taskSupport: "forbidden"` on each tool.
 - **`zod` 4 is required.** The `zod` dependency is `^4.2.0`, the range `@modelcontextprotocol/server` declares, so a host installs one copy; the `zod` peer dependency is gone. An embedding host that held zod 3 gets zod 4 alongside it.
+- **A program that embeds the exported `AgledgerMcpServer` now holds the `@modelcontextprotocol/server` 2.x `McpServer` through its `mcp` property, and needs zod 4.** Code that registers more tools on `server.mcp` is written against the 2.x API. The tool names, arguments, results and the `agledger-mcp` stdio behaviour are unchanged.
+- `agledger-mcp --help` prints to stdout, as `--version` does. A fatal error prints its cause as well as its message, and the whole stack when `DEBUG` is set. SIGINT and SIGTERM end a running token command before the process exits. `--timeout` and `AGLEDGER_TIMEOUT` refuse a value under one millisecond, which would time every call out at once.
+- The README and `--help` say what the tool description says about `nextSteps`: most responses carry it, and listing pages, `GET /v1/schemas` and `GET /v1/admin/orgs` carry none.
 
 ### Fixed
 
 - **`agledger_api` refuses a `params` value nested below the bracket form, and sends nothing.** `{ criteriaGte: { amount: 500 } }` becomes `criteriaGte[amount]=500`; an object one level deeper, or inside an array, used to be sent as `[object Object]`, which the Server read as a filter on that string. It now returns `INVALID_ARGUMENT`.
+- **`agledger_api` no longer fails a write that succeeded with an empty body.** A 204, or any empty body under a JSON content type, returned `UNKNOWN_ERROR: Unexpected end of JSON input`, which an agent could retry as a failed write. An empty body is `{}`, and a body that does not parse under a JSON content type comes back as `{ _raw, _contentType }`.
+- **An error result carries `httpStatus`, and `retryAfter` in seconds when the Server sent a `Retry-After` header.** The description told the model to honour Retry-After, but the header never reached it. The Server's own fields are forwarded as sent and win over both.
+- **A failed connection says why.** `fetch failed` is followed by the cause (`ECONNREFUSED`, `ENOTFOUND`, a certificate error), with a suggestion for each; a certificate the Server presents that is not accepted points at `NODE_EXTRA_CA_CERTS`. The same holds for `agledger_discover` and the resources.
+- Reading `agledger://openapi` or `agledger://llms.txt` after the Server refused the call includes the Server's `detail` and `recoveryHint`, not only `HTTP 401`.
+- `agledger_discover` marks a section the Server refused with `httpStatus` and `error: true` and the Server's body. A failed scope-profiles call was omitted, and a refused health or identity call was stored as if it were the answer.
+- **An API URL with a path prefix keeps it.** `https://gateway.example/agledger` sent `/v1/records` to `https://gateway.example/v1/records`; requests now go to the prefix followed by the path, and are still pinned to the configured origin.
 
 ## [3.1.0] - 2026-11-05
 

@@ -22,7 +22,7 @@ import {
   type SuppliedKeyEntry,
   type VerifyExportResult,
 } from '@agledger/verify-core';
-import { ApiClient, QueryShapeError } from './api-client.js';
+import { ApiClient, QueryShapeError, type ApiResponse } from './api-client.js';
 import {
   OidcCertCredential,
   OidcExchangeError,
@@ -30,6 +30,7 @@ import {
   type OidcCertCredentialOptions,
 } from './credentials.js';
 import { DelegationSource, DelegationSourceError, type DelegationSourceOptions } from './delegation.js';
+import { describeError, fetchCause } from './errors.js';
 import { SERVER_VERSION } from './version.js';
 
 export { SERVER_VERSION };
@@ -109,6 +110,55 @@ function errorResult(
   };
 }
 
+/** Cause codes that mean the Server's certificate was not accepted. */
+const TLS_CAUSE = /^(CERT_|UNABLE_TO_|DEPTH_ZERO_|SELF_SIGNED_|ERR_TLS_|ERR_SSL_|ERR_CERT)|HOSTNAME_MISMATCH/;
+
+/** A request that never reached the API: the connection failed, so nothing was applied. */
+function networkErrorResult(err: Error, sentKey: string | undefined): CallToolResult {
+  const cause = fetchCause(err);
+  const message = describeError(err);
+  if (cause === 'ENOTFOUND') {
+    return errorResult(message, 'NETWORK_ERROR', 'The API host does not resolve. Check the API URL for a typo, and that DNS can see it from this machine. Nothing was sent.');
+  }
+  if (cause === 'ECONNREFUSED') {
+    return errorResult(message, 'NETWORK_ERROR', 'The host resolved but refused the connection. Check that the Server is running and the port in the API URL is right. Nothing was sent.');
+  }
+  if (cause !== undefined && TLS_CAUSE.test(cause)) {
+    return errorResult(
+      message,
+      'NETWORK_ERROR',
+      'The Server\'s TLS certificate was not accepted. Check the certificate chain, its expiry and that the host name matches the API URL. For a private certificate authority, start agledger-mcp with NODE_EXTRA_CA_CERTS=<path to the CA certificate>. Nothing was sent.',
+    );
+  }
+  return errorResult(
+    message,
+    'NETWORK_ERROR',
+    sentKey
+      ? `Check that the API URL is correct. Try GET /health to verify connectivity. If the connection dropped after the request went out it may have been applied: retry with idempotencyKey "${sentKey}", never a new key.`
+      : 'Check that the API URL is correct. Try GET /health to verify connectivity.',
+    sentKey ? { idempotencyKey: sentKey } : undefined,
+  );
+}
+
+/** GET a discovery document for a resource read; a failure throws with the status and the API's own detail, or the connection's cause. */
+async function fetchDocument(client: ApiClient, path: string): Promise<unknown> {
+  let response: ApiResponse;
+  try {
+    response = await client.request('GET', path);
+  } catch (err) {
+    throw new Error(`Failed to fetch ${path}: ${describeError(err)}`, { cause: err });
+  }
+  if (!response.ok) throw new Error(apiFailureText(path, response));
+  return response.body;
+}
+
+/** What a failed fetch of a discovery document says: the status, then the API's own detail and recovery hint. */
+function apiFailureText(path: string, response: ApiResponse): string {
+  const body = response.body !== null && typeof response.body === 'object' ? (response.body as Record<string, unknown>) : {};
+  const parts = [body.detail, body.message, body.recoveryHint].filter((v): v is string => typeof v === 'string' && v !== '');
+  return `Failed to fetch ${path}: HTTP ${response.status}${parts.length > 0 ? `. ${parts.join(' ')}` : ''}`;
+}
+
 /**
  * The credential could not produce a bearer. This is a client-side failure (the
  * request never went out), so it is reported in the server's own error shape.
@@ -186,8 +236,8 @@ function unknownArgumentResult(
 // then the handler JSON.parses uniformly.
 //
 // Deliberately NOT `z.preprocess`, which published these fields as optional
-// even when they were required. The MCP SDK renders tool schemas with
-// `toJSONSchema(..., { io: 'input' })`, and that builds `required` from each
+// even when they were required. Tool schemas are rendered with
+// `toJSONSchema(..., { io: 'input' })`, which builds `required` from each
 // field's `_zod.optin`. `z.preprocess` types its input as `unknown`, which
 // subsumes `undefined`, so it sets `optin: 'optional'` and the field drops out
 // of `required`. `agledger_verify` published no `required` array at all, which
@@ -201,46 +251,26 @@ const jsonStringField = z
   .pipe(z.string())
   .meta({ type: 'string' });
 
+type ParsedJson<T> = { ok: true; value: T } | { ok: false; error: CallToolResult };
+
+/**
+ * Decode a JSON-encoded argument that must be an object, or, with
+ * `allowArray`, an object or array (`agledger_verify.publicKeys`, which accepts
+ * verify-core's `SuppliedKeyEntry[]` polymorphism). Strings, numbers, booleans
+ * and null fail loudly.
+ */
+function parseJsonObject(value: string, fieldName: string): ParsedJson<Record<string, unknown>>;
 function parseJsonObject(
   value: string,
   fieldName: string,
-): { ok: true; value: Record<string, unknown> } | { ok: false; error: CallToolResult } {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(value);
-  } catch (err) {
-    return {
-      ok: false,
-      error: errorResult(
-        `Argument \`${fieldName}\` is not valid JSON: ${err instanceof Error ? err.message : String(err)}`,
-        'INVALID_JSON',
-        `Pass \`${fieldName}\` as a JSON-encoded string (e.g. '{"key":"value"}') or as a native object.`,
-      ),
-    };
-  }
-  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    return {
-      ok: false,
-      error: errorResult(
-        `Argument \`${fieldName}\` must decode to a JSON object.`,
-        'INVALID_JSON',
-        `Pass \`${fieldName}\` as a JSON object, e.g. '{"key":"value"}'.`,
-      ),
-    };
-  }
-  return { ok: true, value: parsed as Record<string, unknown> };
-}
-
-/**
- * Parse a JSON-encoded object OR array. Used for fields that legitimately
- * accept either shape (e.g. `agledger_verify.publicKeys`, which accepts verify-core
- * `SuppliedKeyEntry[]` polymorphism). Strings,
- * numbers, booleans, and null still fail loudly.
- */
-function parseJsonObjectOrArray(
+  options: { allowArray: true },
+): ParsedJson<Record<string, unknown> | unknown[]>;
+function parseJsonObject(
   value: string,
   fieldName: string,
-): { ok: true; value: Record<string, unknown> | unknown[] } | { ok: false; error: CallToolResult } {
+  options?: { allowArray: true },
+): ParsedJson<Record<string, unknown> | unknown[]> {
+  const allowArray = options?.allowArray === true;
   let parsed: unknown;
   try {
     parsed = JSON.parse(value);
@@ -248,19 +278,25 @@ function parseJsonObjectOrArray(
     return {
       ok: false,
       error: errorResult(
-        `Argument \`${fieldName}\` is not valid JSON: ${err instanceof Error ? err.message : String(err)}`,
+        `Argument \`${fieldName}\` is not valid JSON: ${describeError(err)}`,
         'INVALID_JSON',
-        `Pass \`${fieldName}\` as a JSON-encoded string (e.g. '{"key":"value"}' or '[{"keyId":"k1","publicKey":"…"}]') or as a native object/array.`,
+        allowArray
+          ? `Pass \`${fieldName}\` as a JSON-encoded string (e.g. '{"key":"value"}' or '[{"keyId":"k1","publicKey":"..."}]') or as a native object/array.`
+          : `Pass \`${fieldName}\` as a JSON-encoded string (e.g. '{"key":"value"}') or as a native object.`,
       ),
     };
   }
-  if (parsed === null || typeof parsed !== 'object') {
+  if (parsed === null || typeof parsed !== 'object' || (!allowArray && Array.isArray(parsed))) {
     return {
       ok: false,
       error: errorResult(
-        `Argument \`${fieldName}\` must decode to a JSON object or array.`,
+        allowArray
+          ? `Argument \`${fieldName}\` must decode to a JSON object or array.`
+          : `Argument \`${fieldName}\` must decode to a JSON object.`,
         'INVALID_JSON',
-        `Pass \`${fieldName}\` as a JSON object (\`{keyId: spkiBase64, ...}\`) or array (\`[{keyId, publicKey}, ...]\`).`,
+        allowArray
+          ? `Pass \`${fieldName}\` as a JSON object (\`{keyId: spkiBase64, ...}\`) or array (\`[{keyId, publicKey}, ...]\`).`
+          : `Pass \`${fieldName}\` as a JSON object, e.g. '{"key":"value"}'.`,
       ),
     };
   }
@@ -272,7 +308,7 @@ function parseJsonObjectOrArray(
  * returns an envelope `{ data: [{ keyId, publicKey, ... }], canonicalization, ... }`,
  * not the bare array verify-core expects. An MCP agent's natural flow gets the
  * envelope straight from `agledger_api` and has no `.data[]`-extraction step,
- * so unwrap `.data` here, the MCP analogue of the CLI's fix. A
+ * so unwrap `.data` here. A
  * bare `[{keyId, publicKey}]` list or a `{keyId: base64}` map passes through
  * untouched; verify-core then validates the shape and throws on anything else.
  */
@@ -591,9 +627,8 @@ export class AgledgerMcpServer {
   constructor(options: AgledgerMcpServerOptions) {
     // No placeholder default. agledger.example.com resolves nowhere, so a
     // missing --api-url surfaced as a DNS failure against a host the operator
-    // never configured, on every tool call. Same defect the CLI and SDK
-    // carried; every deployment is self-hosted, so there is no default worth
-    // having. Fail at startup, where it can be read.
+    // never configured, on every tool call. Every deployment is self-hosted, so
+    // there is no default worth having. Fail at startup, where it can be read.
     const apiUrl = options.apiUrl;
     if (!apiUrl) {
       throw new Error(
@@ -668,31 +703,24 @@ export class AgledgerMcpServer {
 
           const result: Record<string, unknown> = {};
 
-          if (health.status === 'fulfilled') {
-            result.health = health.value.body;
-          } else {
-            result.health = {
-              error: health.reason instanceof Error ? health.reason.message : String(health.reason),
-            };
-          }
+          // One section per call. A call the API refused is marked with the
+          // HTTP status and the API's own body, so a failed section never reads
+          // as an answer, and one that never completed carries the error.
+          const section = (call: PromiseSettledResult<ApiResponse>): unknown => {
+            if (call.status === 'rejected') return { error: describeError(call.reason) };
+            if (call.value.ok) return call.value.body;
+            const body = call.value.body !== null && typeof call.value.body === 'object' ? call.value.body : {};
+            return { httpStatus: call.value.status, ...body, error: true };
+          };
 
-          if (identity.status === 'fulfilled') {
-            result.identity = identity.value.body;
-          } else {
+          result.health = section(health);
+          if (identity.status === 'rejected') {
             const credentialError = credentialErrorResult(identity.reason);
-            result.identity = credentialError
-              ? credentialError.structuredContent
-              : {
-                  error:
-                    identity.reason instanceof Error
-                      ? identity.reason.message
-                      : String(identity.reason),
-                };
+            result.identity = credentialError ? credentialError.structuredContent : section(identity);
+          } else {
+            result.identity = section(identity);
           }
-
-          if (scopeProfiles.status === 'fulfilled') {
-            result.scopeProfiles = scopeProfiles.value.body;
-          }
+          result.scopeProfiles = section(scopeProfiles);
 
           // Whether POSTs carry an AGLedger-On-Behalf-Of delegation, and from
           // where. The token itself is never shown.
@@ -710,7 +738,7 @@ export class AgledgerMcpServer {
 
           return { content: mirrorContent(result), structuredContent: result };
         } catch (err) {
-          return errorResult(err instanceof Error ? err.message : String(err), 'DISCOVER_FAILED');
+          return errorResult(describeError(err), 'DISCOVER_FAILED');
         }
       },
     );
@@ -750,7 +778,7 @@ export class AgledgerMcpServer {
           'GET /v1/records/{id}/audit-export takes format=html and returns the page as text exactly as the Server sent it; ' +
           'use the default JSON export for agledger_verify. ' +
           'On a keyed write, 409 IDEMPOTENCY_KEY_IN_FLIGHT means the first attempt is still running: retry with the same key ' +
-          'after Retry-After. 409 IDEMPOTENT_WRITE_COMMITTED means it already landed: follow its refreshUrl, do not retry. ' +
+          'after Retry-After (an error result carries it as retryAfter, in seconds, beside httpStatus). 409 IDEMPOTENT_WRITE_COMMITTED means it already landed: follow its refreshUrl, do not retry. ' +
           '503 SERVER_SHUTTING_DOWN is retryable. ' +
           'For the full API catalog, GET /openapi.json (or read the agledger://openapi resource); ' +
           'for prose orientation, GET /llms.txt (or read the agledger://llms.txt resource). ' +
@@ -858,8 +886,15 @@ export class AgledgerMcpServer {
           }
 
           // Forward the API error body verbatim. The API owns error guidance;
-          // the MCP does not enrich, translate, or inject suggestions.
-          const errorBody = (response.body ?? {}) as Record<string, unknown>;
+          // the MCP does not enrich, translate, or inject suggestions. What it
+          // adds is what the body cannot say: the HTTP status, and the seconds
+          // of a Retry-After header, which the tool description tells the model
+          // to honour. The body's own fields win over both.
+          const errorBody = {
+            httpStatus: response.status,
+            ...(response.retryAfterSeconds !== undefined ? { retryAfter: response.retryAfterSeconds } : {}),
+            ...((response.body ?? {}) as Record<string, unknown>),
+          };
 
           return {
             content: mirrorContent(errorBody),
@@ -880,19 +915,12 @@ export class AgledgerMcpServer {
             );
           }
           if (err instanceof TypeError && err.message.includes('fetch')) {
-            return errorResult(
-              err.message,
-              'NETWORK_ERROR',
-              sentKey
-                ? `Check that the API URL is correct. Try GET /health to verify connectivity. If the connection dropped after the request went out it may have been applied: retry with idempotencyKey "${sentKey}", never a new key.`
-                : 'Check that the API URL is correct. Try GET /health to verify connectivity.',
-              sentKey ? { idempotencyKey: sentKey } : undefined,
-            );
+            return networkErrorResult(err, sentKey);
           }
           if (err instanceof QueryShapeError) {
             return errorResult(err.message, 'INVALID_ARGUMENT', 'Give each params entry a string, number or boolean, or an object of them one level deep (params: { criteriaGte: { amount: 500 } }). Nothing was sent.');
           }
-          return errorResult(err instanceof Error ? err.message : String(err), 'UNKNOWN_ERROR');
+          return errorResult(describeError(err), 'UNKNOWN_ERROR');
         }
       },
     );
@@ -966,7 +994,7 @@ export class AgledgerMcpServer {
             parseDistrustedKeys(distrustedKeys ?? []);
           } catch (err) {
             return errorResult(
-              err instanceof Error ? err.message : String(err),
+              describeError(err),
               'INVALID_ARGUMENT',
               'Pass trustAnchors as ["sha256:<64 hex>"] and distrustedKeys as ["sha256:<64 hex>" or "sha256:<64 hex>@<RFC 3339 instant>"].',
             );
@@ -975,7 +1003,7 @@ export class AgledgerMcpServer {
             assertNotPinnedAndDistrusted(trustAnchors, distrustedKeys);
           } catch (err) {
             return errorResult(
-              err instanceof Error ? err.message : String(err),
+              describeError(err),
               'INVALID_ARGUMENT',
               'Keep the pin and give the leaked key the instant it leaked, "sha256:<64 hex>@<RFC 3339 instant>"; or, if nothing it signed is vouched for, drop it from trustAnchors.',
             );
@@ -993,14 +1021,14 @@ export class AgledgerMcpServer {
 
           let publicKeys: Record<string, string> | ReadonlyArray<SuppliedKeyEntry> | undefined;
           if (publicKeysRaw !== undefined && publicKeysRaw !== '') {
-            const decodedKeys = parseJsonObjectOrArray(publicKeysRaw, 'publicKeys');
+            const decodedKeys = parseJsonObject(publicKeysRaw, 'publicKeys', { allowArray: true });
             if (!decodedKeys.ok) return decodedKeys.error;
             publicKeys = unwrapVerificationKeys(decodedKeys.value);
           }
 
           let agentKeys: AgentPublicKeyJwk[] | undefined;
           if (agentKeysRaw !== undefined && agentKeysRaw !== '') {
-            const decodedAgentKeys = parseJsonObjectOrArray(agentKeysRaw, 'agentKeys');
+            const decodedAgentKeys = parseJsonObject(agentKeysRaw, 'agentKeys', { allowArray: true });
             if (!decodedAgentKeys.ok) return decodedAgentKeys.error;
             if (!Array.isArray(decodedAgentKeys.value)) {
               return errorResult(
@@ -1014,7 +1042,7 @@ export class AgledgerMcpServer {
 
           let federationKeys: Record<string, string> | FederationKeyEntry[] | undefined;
           if (federationKeysRaw !== undefined && federationKeysRaw !== '') {
-            const decodedFederationKeys = parseJsonObjectOrArray(federationKeysRaw, 'federationKeys');
+            const decodedFederationKeys = parseJsonObject(federationKeysRaw, 'federationKeys', { allowArray: true });
             if (!decodedFederationKeys.ok) return decodedFederationKeys.error;
             federationKeys = decodedFederationKeys.value as Record<string, string> | FederationKeyEntry[];
           }
@@ -1042,7 +1070,7 @@ export class AgledgerMcpServer {
           // verify-core throws TypeError only on input it refuses (a supplied
           // key's window that is not RFC 3339, a malformed key list): that is
           // the caller's argument, not a failed verification.
-          return errorResult(err instanceof Error ? err.message : String(err), err instanceof TypeError ? 'INVALID_ARGUMENT' : 'VERIFY_FAILED');
+          return errorResult(describeError(err), err instanceof TypeError ? 'INVALID_ARGUMENT' : 'VERIFY_FAILED');
         }
       },
     );
@@ -1066,16 +1094,13 @@ export class AgledgerMcpServer {
         mimeType: 'application/json',
       },
       async () => {
-        const response = await client.request('GET', '/openapi.json');
-        if (!response.ok) {
-          throw new Error(`Failed to fetch /openapi.json: HTTP ${response.status}`);
-        }
+        const body = await fetchDocument(client, '/openapi.json');
         return {
           contents: [
             {
               uri: 'agledger://openapi',
               mimeType: 'application/json',
-              text: typeof response.body === 'string' ? response.body : JSON.stringify(response.body),
+              text: typeof body === 'string' ? body : JSON.stringify(body),
             },
           ],
         };
@@ -1098,13 +1123,9 @@ export class AgledgerMcpServer {
         mimeType: 'text/plain',
       },
       async () => {
-        const response = await client.request('GET', '/llms.txt');
-        if (!response.ok) {
-          throw new Error(`Failed to fetch /llms.txt: HTTP ${response.status}`);
-        }
         // /llms.txt is text/plain, so the client surfaces the raw body rather
         // than a parsed object.
-        const body = response.body;
+        const body = await fetchDocument(client, '/llms.txt');
         const text =
           typeof body === 'string'
             ? body

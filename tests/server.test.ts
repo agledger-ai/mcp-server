@@ -521,7 +521,7 @@ describe('agledger_api', () => {
 
     expect(result.isError).toBe(true);
     const content = result.structuredContent as Record<string, unknown>;
-    expect(content).toEqual(errorBody); // exact match, no added fields
+    expect(content).toEqual({ ...errorBody, httpStatus: 400 }); // the HTTP status is the only addition
     expect(content.suggestion).toBeUndefined();
   });
 

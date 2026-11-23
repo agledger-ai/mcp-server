@@ -8,6 +8,17 @@ export interface ApiResponse {
   status: number;
   body: unknown;
   ok: boolean;
+  /** The Retry-After header as whole seconds from now, when the Server sent one. */
+  retryAfterSeconds?: number;
+}
+
+/** Retry-After as seconds from now: delay-seconds, or an HTTP date. Undefined when absent or unreadable. */
+function retryAfterSeconds(header: string | null): number | undefined {
+  if (header === null) return undefined;
+  const value = header.trim();
+  if (/^\d+$/.test(value)) return Number(value);
+  const at = Date.parse(value);
+  return Number.isNaN(at) ? undefined : Math.max(0, Math.ceil((at - Date.now()) / 1000));
 }
 
 // Strip trailing slashes with a single linear scan. A regex like /\/+$/ is
@@ -18,17 +29,6 @@ function stripTrailingSlashes(s: string): string {
   return s.slice(0, end);
 }
 
-/**
- * Serialize one query parameter.
- *
- * A plain object becomes the API's bracket notation (`metadata[key]=value`),
- * which is what the `criteria` and `metadata` filters on
- * GET /v1/records/search expect. Running it through `String(value)` instead
- * sent the literal `[object Object]`, so every such filter returned 400.
- *
- * A Date becomes ISO-8601 rather than the JS locale form, which the date-time
- * query params reject.
- */
 /** A query value the bracket form cannot carry: an object or array nested below its one level. */
 export class QueryShapeError extends Error {
   constructor(readonly param: string) {
@@ -49,6 +49,17 @@ function queryScalar(name: string, value: unknown): string {
   throw new QueryShapeError(name);
 }
 
+/**
+ * Serialize one query parameter.
+ *
+ * A plain object becomes the API's bracket notation (`metadata[key]=value`),
+ * which is what the `criteria` and `metadata` filters on
+ * GET /v1/records/search expect. Running it through `String(value)` instead
+ * sent the literal `[object Object]`, so every such filter returned 400.
+ *
+ * A Date becomes ISO-8601 rather than the JS locale form, which the date-time
+ * query params reject.
+ */
 function appendQueryParam(search: URLSearchParams, key: string, value: unknown): void {
   if (value instanceof Date) {
     search.set(key, value.toISOString());
@@ -108,18 +119,7 @@ export class ApiClient {
   }
 
   async request(method: string, path: string, options?: RequestOptions): Promise<ApiResponse> {
-    const url = new URL(path, this.apiUrl);
-
-    // Defense-in-depth: pin every request to the configured API origin. A
-    // protocol-relative or absolute `path` (e.g. `//evil.com/x`,
-    // `https://evil.com`) resolves against the base to a different origin, which
-    // would leak the `Authorization: Bearer` header off-host. No caller
-    // may steer the client off-origin.
-    if (url.origin !== new URL(this.apiUrl).origin) {
-      throw new Error(
-        `Refusing to send request off-origin: path "${path}" resolves to ${url.origin}, expected ${new URL(this.apiUrl).origin}.`,
-      );
-    }
+    const url = this.urlFor(path);
 
     if (options?.query) {
       for (const [k, v] of Object.entries(options.query)) {
@@ -193,6 +193,28 @@ export class ApiClient {
     return this.scrubbed(second, onBehalfOf);
   }
 
+  /**
+   * The request URL: the base URL (with any path prefix, such as a gateway
+   * mount point) followed by `path`. `new URL(path, base)` would replace that
+   * prefix.
+   *
+   * Defense-in-depth: every request is pinned to the configured API origin. A
+   * protocol-relative or absolute `path` (e.g. `//evil.com/x`,
+   * `https://evil.com`) would send the `Authorization: Bearer` header off-host,
+   * and no caller may steer the client there.
+   */
+  private urlFor(path: string): URL {
+    const origin = new URL(this.apiUrl).origin;
+    if (!path.startsWith('/') || path.startsWith('//')) {
+      throw new Error(`Refusing to send request off-origin: path "${path}" is not an absolute path on ${origin}.`);
+    }
+    const url = new URL(this.apiUrl + path);
+    if (url.origin !== origin) {
+      throw new Error(`Refusing to send request off-origin: path "${path}" resolves to ${url.origin}, expected ${origin}.`);
+    }
+    return url;
+  }
+
   /** The delegation token never comes back to a tool, even if the Server echoes it. */
   private scrubbed(res: ApiResponse, onBehalfOf: string | undefined): ApiResponse {
     return onBehalfOf ? { ...res, body: cutSecret(res.body, onBehalfOf) } : res;
@@ -200,7 +222,7 @@ export class ApiClient {
 
   private async postAnonymous(path: string, payload: unknown): Promise<{ status: number; body: unknown }> {
     const res = await this.send(
-      new URL(path, this.apiUrl),
+      this.urlFor(path),
       'POST',
       { Accept: 'application/json', 'Content-Type': 'application/json', 'User-Agent': USER_AGENT },
       JSON.stringify(payload),
@@ -226,16 +248,26 @@ export class ApiClient {
       });
 
       const contentType = res.headers.get('content-type') ?? '';
+      // Text first: `res.json()` throws on an empty body, which turned a
+      // successful 204 write into an error the caller could retry. An empty body
+      // is `{}`, and a body that does not parse under a JSON content type is
+      // handed back as the text it was.
+      const text = await res.text();
       let parsed: unknown;
-
-      if (contentType.includes('json')) {
-        parsed = await res.json();
+      if (text === '') {
+        parsed = {};
+      } else if (contentType.includes('json')) {
+        try {
+          parsed = JSON.parse(text);
+        } catch {
+          parsed = { _raw: text, _contentType: contentType };
+        }
       } else {
-        const text = await res.text();
         parsed = { _raw: text, _contentType: contentType };
       }
 
-      return { status: res.status, body: parsed, ok: res.ok };
+      const retryAfter = retryAfterSeconds(res.headers.get('retry-after'));
+      return { status: res.status, body: parsed, ok: res.ok, ...(retryAfter !== undefined ? { retryAfterSeconds: retryAfter } : {}) };
     } finally {
       clearTimeout(timeout);
     }

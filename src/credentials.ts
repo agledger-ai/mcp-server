@@ -20,8 +20,9 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash, generateKeyPairSync, sign, type KeyObject } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
+import { errorMessage } from './errors.js';
 
-/** The env vars the server reads a token source from. The CLI reads the same names. */
+/** The env vars the server reads a token source from. */
 export const OIDC_ENV = {
   TOKEN_CMD: 'AGLEDGER_OIDC_TOKEN_CMD',
   TOKEN_FILE: 'AGLEDGER_OIDC_TOKEN_FILE',
@@ -147,6 +148,15 @@ function killTree(pid: number | undefined): void {
   }
 }
 
+/** Process groups of token commands that are running now, so a shutdown can end them. */
+const runningCommands = new Set<number>();
+
+/** Kill every token command still running. For a signal handler: the commands run detached, so they would outlive this process. */
+export function killRunningTokenCommands(): void {
+  for (const pid of runningCommands) killTree(pid);
+  runningCommands.clear();
+}
+
 /**
  * Runs a shell command on every call; its stdout is the token. The command
  * runs in its own process group, which is killed on timeout, on oversized
@@ -172,9 +182,11 @@ export function oidcTokenFromCommand(
           windowsHide: true,
         });
       } catch (err) {
-        reject(new OidcTokenSourceError(`${origin}: could not run the token command: ${err instanceof Error ? err.message : String(err)}`));
+        reject(new OidcTokenSourceError(`${origin}: could not run the token command: ${errorMessage(err)}`));
         return;
       }
+      const pid = child.pid;
+      if (pid !== undefined) runningCommands.add(pid);
       const out: Buffer[] = [];
       let outBytes = 0;
       let stderr = '';
@@ -184,6 +196,7 @@ export function oidcTokenFromCommand(
         settled = true;
         clearTimeout(timer);
         killTree(child.pid);
+        if (pid !== undefined) runningCommands.delete(pid);
         reject(new OidcTokenSourceError(`${origin}: ${message}`));
       };
       const timer = setTimeout(() => fail(`the token command did not finish within ${timeoutMs / 1000}s and was killed.`), timeoutMs);
@@ -205,6 +218,7 @@ export function oidcTokenFromCommand(
         clearTimeout(timer);
         // Anything it left running in the background goes with it.
         killTree(child.pid);
+        if (pid !== undefined) runningCommands.delete(pid);
         if (code === 0) {
           resolve(Buffer.concat(out).toString('utf8'));
           return;
@@ -365,7 +379,7 @@ export class OidcCertCredential implements Credential {
         // has not rotated yet fails the same way on every call until it does.
         // An unrotated token file is the normal state between rotations, not a
         // failure worth a line on stderr.
-        const message = err instanceof Error ? err.message : String(err);
+        const message = errorMessage(err);
         const expected = err instanceof OidcTokenSourceError && err.unrotated;
         if (!expected && this.lastWarned !== message) {
           this.lastWarned = message;
@@ -405,7 +419,7 @@ export class OidcCertCredential implements Credential {
     } catch (err) {
       if (err instanceof OidcTokenSourceError) throw err;
       throw new OidcTokenSourceError(
-        `${this.origin}: ${redactTokens(err instanceof Error ? err.message : String(err))}`,
+        `${this.origin}: ${redactTokens(errorMessage(err))}`,
       );
     }
     if (!token) throw new OidcTokenSourceError(`${this.origin}: the token source returned nothing.`);
@@ -440,7 +454,7 @@ export class OidcCertCredential implements Credential {
       res = await ctx.postAnonymous(EXCHANGE_PATH, body);
     } catch (err) {
       throw new OidcExchangeError(
-        `OIDC cert exchange failed: ${redactTokens(err instanceof Error ? err.message : String(err))}`,
+        `OIDC cert exchange failed: ${redactTokens(errorMessage(err))}`,
         0,
         null,
       );

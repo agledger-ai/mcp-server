@@ -4,8 +4,9 @@ import { parseArgs } from 'node:util';
 import { StdioServerTransport } from '@modelcontextprotocol/server/stdio';
 import { AgledgerMcpServer, SERVER_VERSION } from './server.js';
 import { resolveZodCopies, zodSplitWarning } from './zod-integrity.js';
-import { OIDC_ENV, oidcTokenFromCommand, oidcTokenFromFile, type OidcCertCredentialOptions } from './credentials.js';
+import { OIDC_ENV, killRunningTokenCommands, oidcTokenFromCommand, oidcTokenFromFile, type OidcCertCredentialOptions } from './credentials.js';
 import { ON_BEHALF_OF_ENV, type DelegationSourceOptions } from './delegation.js';
+import { errorMessage } from './errors.js';
 
 /**
  * Exit codes. A launcher that supervises this process, or a shell wrapping it,
@@ -20,16 +21,34 @@ const EXIT_USAGE_ERROR = 2;
 // from an uncaughtException handler suppresses Node's default non-zero exit,
 // so an unstartable server would otherwise report its fatal error and exit 0.
 process.on('uncaughtException', (err) => {
-  process.stderr.write(`Fatal: ${err.message}\n`);
+  process.stderr.write(`Fatal: ${fatalText(err)}\n`);
   process.exit(EXIT_RUNTIME_FAILURE);
 });
 
 process.on('unhandledRejection', (reason) => {
-  process.stderr.write(
-    `Fatal: unhandled rejection: ${reason instanceof Error ? reason.message : String(reason)}\n`,
-  );
+  process.stderr.write(`Fatal: unhandled rejection: ${fatalText(reason)}\n`);
   process.exit(EXIT_RUNTIME_FAILURE);
 });
+
+// A token command runs in its own process group, so it would outlive a server
+// that is told to stop. End it first, then exit with the conventional code.
+for (const [signal, code] of [['SIGINT', 130], ['SIGTERM', 143]] as const) {
+  process.on(signal, () => {
+    killRunningTokenCommands();
+    process.exit(code);
+  });
+}
+
+/**
+ * A fatal error as text: the message and its cause, or with DEBUG set the
+ * whole stack (which carries the message and, for a cause, the cause's).
+ */
+function fatalText(err: unknown): string {
+  if (!(err instanceof Error)) return String(err);
+  if (process.env.DEBUG) return err.stack ?? err.message;
+  const cause = err.cause instanceof Error ? err.cause.message : typeof err.cause === 'string' ? err.cause : undefined;
+  return cause && !err.message.includes(cause) ? `${err.message} (${cause})` : err.message;
+}
 
 /** Why an API URL cannot be used, or undefined when it can. */
 function apiUrlProblem(url: string): string | undefined {
@@ -52,6 +71,8 @@ const MAX_TIMEOUT_SECONDS = 2_147_483;
 function timeoutProblem(raw: string): string | undefined {
   const seconds = raw.trim() === '' ? NaN : Number(raw);
   if (!Number.isFinite(seconds) || seconds <= 0) return 'is not a positive number of seconds';
+  // The wait is whole milliseconds; anything that rounds to 0 would time every call out at once.
+  if (Math.round(seconds * 1000) < 1) return 'is less than 1 millisecond';
   if (seconds > MAX_TIMEOUT_SECONDS) return `is more than ${MAX_TIMEOUT_SECONDS} seconds`;
   return undefined;
 }
@@ -74,7 +95,7 @@ function main(): void {
     // caller can fix, not a crash, so say so and point at --help rather than
     // letting it surface as an uncaught exception.
     process.stderr.write(
-      `Error: ${err instanceof Error ? err.message : String(err)}\nRun \`agledger-mcp --help\` for usage.\n`,
+      `Error: ${errorMessage(err)}\nRun \`agledger-mcp --help\` for usage.\n`,
     );
     process.exit(EXIT_USAGE_ERROR);
   }
@@ -87,7 +108,8 @@ function main(): void {
   }
 
   if (values.help) {
-    process.stderr.write(
+    // stdout, like --version: nothing has been connected yet, so it is still free.
+    process.stdout.write(
       `AGLedger MCP Server v${SERVER_VERSION}
 
 Usage: agledger-mcp --api-key <key> --api-url <url>
@@ -134,7 +156,7 @@ POST. It comes from the process, never from a tool argument.
 
 Tools:
   agledger_discover   Returns API health, your identity, and available scopes
-  agledger_api        Make any AGLedger API call; the API guides you via nextSteps
+  agledger_api        Make any AGLedger API call; most responses carry nextSteps
   agledger_verify     Verify an audit export offline (hash chain + signatures)
 
 Exit codes: 0 clean, 1 runtime failure, 2 usage or configuration error.
@@ -276,9 +298,7 @@ Exit codes: 0 clean, 1 runtime failure, 2 usage or configuration error.
   const transport = new StdioServerTransport();
 
   server.mcp.connect(transport).catch((err: unknown) => {
-    process.stderr.write(
-      `Fatal: failed to start MCP server: ${err instanceof Error ? err.message : String(err)}\n`,
-    );
+    process.stderr.write(`Fatal: failed to start MCP server: ${fatalText(err)}\n`);
     process.exit(EXIT_RUNTIME_FAILURE);
   });
 }
