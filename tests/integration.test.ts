@@ -3,12 +3,9 @@ import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
 import { AgledgerMcpServer } from '../src/server.js';
 
 const API_URL = process.env.AGLEDGER_API_URL ?? 'http://localhost:3001';
-// No placeholder key fallback. `agl_agt_test` is not a credential: against a
-// real Server every call 401s, so the suite REPORTED 8 FAILURES that looked
-// exactly like a regression in whatever had just been changed, when the only
-// thing wrong was that nobody had exported a key. Reachability is not
-// permission. Skip unless a real key is supplied, the same way an unreachable
-// API skips.
+// No placeholder key fallback: against a real Server a fake key makes every
+// call 401, which reads as a regression. Skip unless a real key is supplied,
+// the same way an unreachable API skips.
 const API_KEY = process.env.AGLEDGER_API_KEY ?? '';
 const ADMIN_KEY = process.env.AGLEDGER_ADMIN_API_KEY ?? '';
 
