@@ -19,7 +19,7 @@
 
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash, generateKeyPairSync, sign, type KeyObject } from 'node:crypto';
-import { readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { link, open, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { errorMessage } from './errors.js';
 
@@ -104,10 +104,87 @@ export class AgentKeysFileError extends Error {
  * needed: `{ keys: [{ publicKeyJwk, certId, agentId, issuedAt, expiresAt }] }`,
  * the shape every AGLedger verifier's agent keys input reads. A key already
  * listed is not added twice. Written through a temp file and a rename; a file
- * that does not hold a `keys` list is refused, never overwritten. The same
- * format and rules as the agledger CLI's `--agent-keys-file`.
+ * that does not hold a `keys` list is refused, never overwritten. The read and
+ * the write happen under `<path>.lock`, the same lock the agledger CLI takes,
+ * so processes sharing one file each add their key. The same format and rules
+ * as the CLI's `--agent-keys-file`.
  */
 export async function recordAgentKey(
+  path: string,
+  entry: { publicKeyJwk: { kty: 'OKP'; crv: 'Ed25519'; x: string } } & Record<string, unknown>,
+): Promise<void> {
+  await withKeysFileLock(path, () => appendAgentKey(path, entry));
+}
+
+/** Bounds on the agent keys file lock. Mutable so tests can shorten them. */
+export const KEYS_FILE_LOCK = {
+  /** How long to wait for another process to release the lock. */
+  waitMs: 15_000,
+  /** A lock older than this was left by a process that died holding it. */
+  staleMs: 10_000,
+};
+
+/**
+ * Run `fn` holding `<path>.lock`, an exclusively created file the holder
+ * deletes when done. A lock older than `KEYS_FILE_LOCK.staleMs` is taken over:
+ * renamed aside (atomic, so one waiter wins), and put back if what moved was a
+ * fresh lock rather than the stale one. Matches the agledger CLI's lock.
+ */
+async function withKeysFileLock<T>(path: string, fn: () => Promise<T>): Promise<T> {
+  const lock = `${path}.lock`;
+  const deadline = Date.now() + KEYS_FILE_LOCK.waitMs;
+  for (let delay = 5; ; delay = Math.min(delay * 2, 100)) {
+    try {
+      await (await open(lock, 'wx')).close();
+      break;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== 'EEXIST') {
+        throw new AgentKeysFileError(`Cannot create the agent keys file lock ${lock} (${code ?? errorMessage(err)}).`, path);
+      }
+    }
+    if (await breakStaleLock(lock)) continue;
+    if (Date.now() >= deadline) {
+      throw new AgentKeysFileError(
+        `The agent keys file ${path} stayed locked by another process for ${KEYS_FILE_LOCK.waitMs / 1000}s. If no agledger process is running, delete ${lock}.`,
+        path,
+      );
+    }
+    await new Promise((r) => setTimeout(r, delay + Math.random() * delay));
+  }
+  try {
+    return await fn();
+  } finally {
+    await rm(lock, { force: true });
+  }
+}
+
+/** Remove `lock` if it is stale. True when the caller should try to take it again. */
+async function breakStaleLock(lock: string): Promise<boolean> {
+  let seen;
+  try {
+    seen = await stat(lock);
+  } catch {
+    return true; // Released between our open and stat.
+  }
+  if (Date.now() - seen.mtimeMs <= KEYS_FILE_LOCK.staleMs) return false;
+  const aside = `${lock}.${process.pid}.${Date.now()}.stale`;
+  try {
+    await rename(lock, aside);
+  } catch {
+    return true; // Another waiter moved it first.
+  }
+  const moved = await stat(aside).catch(() => null);
+  if (moved !== null && moved.ino !== seen.ino) {
+    // A waiter replaced the stale lock between our stat and rename: put its
+    // lock back. If the path was taken again meanwhile, that holder keeps it.
+    await link(aside, lock).catch(() => {});
+  }
+  await rm(aside, { force: true });
+  return true;
+}
+
+async function appendAgentKey(
   path: string,
   entry: { publicKeyJwk: { kty: 'OKP'; crv: 'Ed25519'; x: string } } & Record<string, unknown>,
 ): Promise<void> {

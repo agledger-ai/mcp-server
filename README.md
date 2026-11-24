@@ -68,7 +68,7 @@ Nothing is written to disk.
 |---------|-------------|
 | `AGLEDGER_OIDC_TOKEN_FILE` | A file holding an OIDC JWT, such as a Kubernetes projected service-account token. Read on every exchange, so a token rotated on disk is picked up. |
 | `AGLEDGER_OIDC_TOKEN_CMD` | A shell command whose stdout is an OIDC JWT. Run on every exchange. |
-| `AGLEDGER_AGENT_KEYS_FILE` | Optional. A JWK Set file the server's cert public key is added to on each exchange, before the cert is used. The key re-verifies the agent signatures the server seals, offline: pass the file as `agentKeys` to `agledger_verify` or `--agent-keys` to a verifier. One key per server process; `agledger_discover` also shows it as `agentKey`. Public keys only. |
+| `AGLEDGER_AGENT_KEYS_FILE` | Optional. A JWK Set file the server's cert public key is added to on each exchange, before the cert is used. The key re-verifies the agent signatures the server seals, offline: pass the file as `agentKeys` to `agledger_verify` or `--agent-keys` to a verifier. One key per server process; `agledger_discover` also shows it as `agentKey`. Server processes and agledger CLI commands can share one file: each takes `<file>.lock` while it adds its key. Public keys only. |
 | `AGLEDGER_OIDC_AGENT_ID` | Optional. An assertion of the agent id the token binds to, sent on the exchange. It never chooses the agent: when it names a different one, or the token binds none, the Server refuses the exchange with 403 `CERT_AGENT_BINDING_MISMATCH` rather than issue a cert for an agent you did not expect. Leave it unset unless you want that check. |
 
 An API key wins when one is set, then the command, then the file.
